@@ -10,7 +10,7 @@ informed:
 
 ## Context and Problem Statement
 
-La fuente real (Celesa) entrega **inventario completo, no incrementos**: cada 30 minutos publica un archivo con ~650.000 pares `SKU;stock`, sin marca de "qué cambió desde la última vez". Del otro lado, el sistema mantiene del orden de 10⁵ vínculos publicación–SKU repartidos en K tiendas.
+La fuente real (Celesa) entrega **inventario completo, no incrementos**: cada 30 minutos publica un archivo con ~255.000 pares `SKU;stock`, sin marca de "qué cambió desde la última vez". Del otro lado, el sistema mantiene del orden de 10⁵ vínculos publicación–SKU repartidos en K tiendas.
 
 La pregunta es qué escribe el sistema en cada corrida. La cota que decide es dura y ajena al diseño propio: la API de MercadoLibre admite **60 req/min por tienda** (S-08), o sea 3.600 escrituras por hora y por tienda, y ese presupuesto es **compartido** entre escribir stock y leer catálogo (RF-48). Reescribir el catálogo completo de una tienda con 10⁵ publicaciones cuesta ~28 horas de cuota a caudal pleno, para una fuente que se actualiza 48 veces por día. Con ese esquema RNF-01 (p95 bajo 6 horas, p100 bajo 12) es inalcanzable por aritmética, no por implementación.
 
@@ -21,7 +21,7 @@ Como la fuente no informa el cambio, **el delta lo tiene que derivar el sistema*
 * Cota dura de 60 req/min por tienda, compartida entre escritura y lectura (S-08, RF-48). Ninguna decisión de infraestructura propia la mueve.
 * RNF-01: p95 en menos de 6 horas, p100 en menos de 12, sobre el 100 % de los vínculos activos.
 * RNF-14: el trabajo contra la API debe ser proporcional a los **cambios**, no al catálogo; una corrida sin cambios produce **cero escrituras**.
-* RNF-02: una corrida de 650.000 SKU procesada en menos de 10 minutos.
+* RNF-02: una corrida de 255.000 SKU procesada en menos de 10 minutos.
 * RNF-03 y RNF-06: ningún cambio se pierde en silencio, ni siquiera ante caída del worker o del broker.
 * Una escritura que falló tiene que poder recuperarse en la corrida siguiente, no desaparecer.
 * Las fuentes reales no ofrecen un modo incremental: lo que no esté en el archivo, el sistema no lo puede pedir.
@@ -54,7 +54,7 @@ La decisión fija el pipeline en dos procesos separados y acoplados solo por el 
 ### Confirmation
 
 * Test de RNF-14: una corrida idéntica a la anterior produce **cero** llamadas a la API. Se mide llamadas por corrida contra cantidad de deltas, y la métrica queda expuesta en el tablero de salud.
-* Test de RNF-02: corrida de 650.000 SKU (feed real de Celesa) procesada en menos de 10 minutos.
+* Test de RNF-02: corrida de 255.000 SKU (feed real de Celesa) procesada en menos de 10 minutos.
 * Test de recuperación: matar el worker con tareas pendientes y verificar que la cola se reconstruye desde el estado vigente sin perder ningún delta (RNF-03, RNF-06).
 * Test del camino de la opción B que se quiso evitar: una escritura que termina en dead letter debe volver a encolarse en la corrida siguiente aunque el feed no haya cambiado.
 

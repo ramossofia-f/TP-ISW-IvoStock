@@ -24,7 +24,7 @@ Hay un antecedente que condiciona la decisión: el PRD ya define en CU-07 un **c
 * Las tolerancias de CU-07 son fijas. El modelo compite contra ese baseline; no lo ajusta.
 * El sistema tiene que seguir funcionando sin modelo, y decidir con el baseline cuando el modelo no esté disponible o sea inválido.
 * Equipo de 2–3 personas, sin costos significativos y sin servicios siempre encendidos.
-* La inferencia no puede comprometer RNF-02 (una corrida de 650.000 SKU procesada en menos de 10 minutos).
+* La inferencia no puede comprometer RNF-02 (una corrida de 255.000 SKU procesada en menos de 10 minutos).
 
 ## Considered Options
 
@@ -65,7 +65,7 @@ Las etiquetas positivas son sintéticas y se declaran como tales. Para que eso n
 * `make train` reproduce el entrenamiento completo con dataset versionado y semilla fija, y devuelve las mismas métricas (RF-51).
 * El informe de evaluación compara modelo y baseline **por modo de corrupción**, con los modos no vistos separados de los vistos.
 * RNF-17: sobre modos de corrupción no vistos, el modelo iguala o supera el recall del baseline con una tasa de falsos positivos menor o igual, medida sobre histórico real.
-* RNF-18: puntuar una corrida de 650.000 SKU agrega menos de 1 minuto al tiempo de RNF-02.
+* RNF-18: puntuar una corrida de 255.000 SKU agrega menos de 1 minuto al tiempo de RNF-02.
 * Test del fallback: con el modelo ausente o inválido, la corrida se evalúa con el coeficiente de CU-07 y la ingesta no se detiene.
 * El tablero expone tasa de cuarentenas, deriva de las señales y discrepancias entre modelo y baseline (RF-53).
 
@@ -97,7 +97,7 @@ Serie temporal sobre el stock del proveedor para anticipar cuándo un SKU llega 
 
 * Good, porque las etiquetas son reales: el quiebre se observa en el histórico, sin nada sintético.
 * Bad, porque sin datos de ventas la señal es débil: el sistema ve el stock caer, pero no por qué.
-* Bad, porque son 650.000 series, con un costo de entrenamiento y de serving desproporcionado para el equipo.
+* Bad, porque son 255.000 series, con un costo de entrenamiento y de serving desproporcionado para el equipo.
 * Bad, porque no está atado a ningún caso de uso del PRD: habría que agregar un CU y sus RF solo para darle lugar, ampliando alcance en la entrega más cargada.
 
 ### Opción C — Emparejamiento SKU ↔ publicación con ML
@@ -120,6 +120,6 @@ Consultar un modelo de lenguaje sobre cada corrida.
 ## More Information
 
 * Relacionado con PRD §10, CU-07, RF-28, RF-37, RNF-02.
-* **Pendiente en el PRD:** esta decisión requiere agregar RF-49 a RF-53 (puntaje del modelo, fallback al baseline, pipeline reproducible, versionado y rollback, monitoreo) y RNF-17 y RNF-18, y cerrar §10, que hoy figura como *pendiente de definir*.
+* **Reflejado en el PRD:** §10 desarrolla esta decisión, y de ella salen RF-49 a RF-53 (puntaje del modelo, fallback al baseline, pipeline reproducible, versionado y rollback, monitoreo) junto con RNF-17 y RNF-18.
 * El hito de construcción es M5 del roadmap, que depende de M4 y de que haya histórico suficiente. Si al llegar hay pocas corridas archivadas, el modelo arranca en **modo sombra** y el baseline sigue decidiendo.
 * Cambiar de opción más adelante requiere un ADR nuevo y, si con eso cambia el alcance comprometido, re-validar con la cátedra.
