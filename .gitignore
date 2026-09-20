@@ -2,3 +2,22 @@ sessions/
 .claude/
 docs/basura-vieja/
 docs/consignas/
+
+# Datos: snapshots de feeds, catalogos generados y volcados de stock no se versionan.
+# Se obtienen de la fuente o se generan con los scripts del propio sistema.
+snapshots/
+data/
+*.csv
+*.csv.gz
+*.tsv
+
+# Secretos
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
