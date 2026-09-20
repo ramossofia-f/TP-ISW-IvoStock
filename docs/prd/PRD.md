@@ -315,47 +315,12 @@ Clasificados con **ROAM**: *Owned* (vigilado, sin plan todavía), *Mitigated* (h
 
 ## 9. Roadmap a POC y MVP
 
-**Criterios que ordenan el plan.** (1) El riesgo primero: el motor contra la cuota de la API se resuelve antes que cualquier funcionalidad de interfaz. (2) El simulador antes que el motor, porque sin él no hay forma de ejercitar los caminos de falla. (3) 1 proveedor × 1 tienda antes de N × K. (4) CI y tests desde el primer hito, no al final.
+El desarrollo se organizará priorizando la validación temprana de los principales
+riesgos técnicos del sistema en el POC y ampliando posteriormente el alcance
+hasta el MVP.
 
-
-### 9.1 POC — Entrega 2
-
-El riesgo más grande es el motor de sincronización contra la API: cuota, idempotencia y ciclo de vida de los tokens (R-01). El POC lo resuelve sobre una ruta completa y angosta: **el proveedor real (Celesa) + una tienda simulada que implementa el contrato real de MercadoLibre**, con stock propagándose de punta a punta y auditado.
-
-| Hito | Qué se construye | Requisitos | Depende de | Criterio de salida verificable |
-|---|---|---|---|---|
-| **P0 · Fundaciones** | Repo privado compartido con la cátedra, estructura de servicios, `docker-compose` base (PostgreSQL, Redis, almacenamiento de objetos), CI con build, tests y chequeo de secretos, plantilla de ADR | RNF-07, RNF-10, RNF-12 | — | CI en verde sobre `main`; `make up` levanta la infraestructura; el historial muestra commits de cada integrante |
-| **P1 · Simulador y marketplace** | Interfaz de marketplace y simulador: OAuth 2.0 completo, catálogo paginado, escritura de stock con pausa por `out_of_stock`, cuota de 60 req/min con 429, errores reintentables y no reintentables; generador de catálogo | RF-35, RF-36, RF-38 | P0 | Contract tests en verde; 429 al superar la cuota; token revocado a mitad de corrida se provoca a demanda |
-| **P2 · Ingesta** | Alta de proveedor `.csv` con preview y fetch de prueba, corrida contra Celesa real, snapshot crudo inmutable, normalización, estado vigente por UPSERT; generador de feeds | RF-04, 06, 07, 08, 20, 21, 22, 37 · RNF-02 | P0 | Corrida real de ~255.000 SKU dentro del tiempo de RNF-02; re-ejecutarla no duplica efectos; tests con las anomalías reales del feed (duplicados, ISBN alfanuméricos) |
-| **P3 · Motor** | Comparador, cola con prioridad y envejecimiento, reemplazo por vínculo, worker de publicación con cuota, reintentos con backoff, idempotencia, auditoría | RF-23, 24, 25, 26, 30, 45, 46 · RNF-04, 06, 06b | P1, P2 | Test de la propiedad "cola pendiente ≤ vínculos activos"; cero escrituras extra al re-ejecutar; auditoría consultable por publicación |
-| **P4 · Tiendas y vínculos** | Login, secretos cifrados, alta de tienda por OAuth, lectura de catálogo en dos etapas, sugerencia y aprobación de vínculos, ON/OFF con la regla de corte, comparación inicial al vincular | RF-01, 03, 11, 12, 16, 17, 18, 19, 39, 43, 47 · RNF-08 | P1, P3 | Flujo OAuth completo contra el simulador; INV-1 cubierta por test; apagar un vínculo deja la publicación en cero |
-| **P5 · Cierre del POC** | Flujo punta a punta Celesa real → 1 tienda simulada; interfaz mínima; README; ADRs; SRD sin ML; video | Entrega 2 | P2–P4 | `make demo` reproduce el flujo completo, incluidos 429 y token revocado |
-
-P1 y P2 pueden avanzar en paralelo: no se tocan hasta P3. **Mockeado o simplificado en el POC**, y así declarado en el README: interfaz mínima, disparo manual de la ingesta en lugar de programación por proveedor, y dead letters registradas como fallo terminal en la auditoría —RF-27 completo llega en M4—, de modo que ningún delta quede sin estado terminal.
-
-### 9.2 MVP — Entrega 3
-
-Generalizar y operar: N proveedores por K tiendas, el segundo formato de origen, catálogo vivo, gobernanza de corridas, observabilidad verificable y el componente de ML.
-
-| Hito | Qué se construye | Requisitos | Depende de | Criterio de salida verificable |
-|---|---|---|---|---|
-| **M1 · N × K** | Varios proveedores y tiendas, modificación y baja de proveedores, frecuencia de ingesta configurable, vista de tiendas | RF-09, 10, 15 | P5 | Pasar de 1 a K tiendas sobre el mismo feed sin tocar código (criterio de éxito 2) |
-| **M2 · Segundo formato** | Proveedor sobre tabla PostgreSQL | RF-05 | P5 | Alta de un proveedor nuevo en menos de 10 minutos y sin código (criterio 1) |
-| **M3 · Catálogo vivo** | Webhooks de publicación nueva, carga manual de IDs, cuota compartida por tienda | RF-13, 14, 48 | P5 | Test: la lectura de catálogo disparada a mano cede ante las escrituras pendientes |
-| **M4 · Gobernanza y degradación** | Validación y cuarentena por corrida, alerta de errores de parseo, dead letters, publicaciones muertas, estados *degradado* y *atrasada*, baja de proveedor y desconexión de tienda, reproceso manual | RF-27, 28, 29, 32, 34, 40, 42, 44 · RNF-03, 05 | M1 | Los tres casos del criterio 6 se provocan con el simulador; la suma de estados terminales iguala los deltas calculados (criterio 4); una tienda atrasada sigue drenando y una degradada no |
-| **M5 · Machine learning** | Dataset versionado desde el histórico de snapshots, entrenamiento reproducible, evaluación contra el baseline, serving con fallback, monitoreo | RF-49 a 53 · RNF-17, 18 | M4 + histórico suficiente | `make train` reproduce las métricas; el modelo corre en sombra sobre corridas reales; el fallback al baseline está probado |
-| **M6 · Observabilidad** | Logging estructurado con identificador de corrida, métricas por feed y por tienda, health checks, tablero de salud | RF-31, 33 · RNF-09 | M4 | El tablero muestra latencia, dead letters y estados de excepción |
-| **M7 · Programático y cloud** | API descrita en OpenAPI, imágenes construidas en CI, configuración por entorno, despliegue efímero en free tier | RF-41 · RNF-11, 16 | M1 | El pipeline construye y publica imágenes; el despliegue se demuestra |
-| **M8 · Verificación y cierre** | Medición de RNF-01 y RNF-14, los 7 criterios de éxito, SRD completo con ML, ADRs, video | Entrega 3 | Todos | Tabla criterio → evidencia, completa y reproducible |
-
-RNF-13 (escalabilidad conocida) se argumenta en el SRD de cada entrega, no tiene hito propio.
-
-### 9.3 Control, plan B y orden de recorte
-
-- **Cada hito cierra con** tests, README actualizado y, si hubo decisión estructural, un ADR que compare alternativas. Al inicio de cada bloque se absorben las correcciones de la cátedra a la entrega anterior.
-- **Puntos de control.** Fin de P1: si el simulador no reproduce la semántica de cuota, no se avanza a P3. Fin de P3: R-01 queda resuelto o se replantea el objetivo de latencia. Inicio de M5: si hay pocas corridas archivadas, el modelo arranca en modo sombra y el baseline sigue decidiendo (RF-50).
-- **Plan B del POC.** La consigna admite un POC con interfaz mínima o inexistente. Si al cerrar P4 el tiempo no alcanza, las acciones de RF-06 y RF-17 se ejecutan por API o por línea de comandos en lugar de por pantalla, y el POC se cierra sobre el motor (P1–P3) con datos reales.
-- **Orden de recorte del MVP**, si el tiempo no alcanza, de lo primero que se cae a lo último: RF-34 → RF-41 y RNF-16 → RF-10 → RF-09 → RF-42 → RF-32 → RF-14 → RF-44. **RF-40 no entra en esa lista**: es lo único que verifica INV-3, así que recortarlo dejaría una invariante heredada sin demostrar. Ningún *Must* se recorta sin re-validar con la cátedra.
+El detalle de los hitos y el orden de construcción se encuentra en
+[ROADMAP.md](../roadmap/ROADMAP.md).
 
 ## 10. Componente de Machine Learning
 
