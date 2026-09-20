@@ -2,10 +2,13 @@
 
 **Sincronización de inventario entre N fuentes de stock y K tiendas de MercadoLibre**
 
-| **Versión** | 00 — tentativo  |
+| **Versión** | 1.0 — Entrega 1 (Diseño: PRD y roadmap) |
 |---|---|
-| **Estado** | Borrador, sujeto a la aprobación del proyecto por la cátedra |
-| **Documento anterior** | [validacion.md](validacion.md) |
+| **Estado** | Sujeto a la aprobación del proyecto por la cátedra |
+| **Equipo** | María Saráchaga, Francisco Ortega, Sofía Ramos |
+| **Documento anterior** | [validacion.md](validacion.md) — propuesta presentada a la cátedra |
+| **Decisiones registradas** | [ADR-0001](../adr/0001-marketplace-simulado-detras-de-interfaz.md) · [ADR-0002](../adr/0002-propagacion-por-deltas.md) · [ADR-0003](../adr/0003-componente-ml-deteccion-anomalias.md) |
+
 ---
 
 ## 0. Origen del proyecto
@@ -16,7 +19,7 @@ De ese sistema se heredan tres reglas invariantes, que cualquier implementación
 
 - **INV-1.** Una publicación tiene un único vínculo activo que le escribe stock en todo momento.
 - **INV-2.** El stock de un SKU se ofrece completo en todas las tiendas vinculadas: no se reparte ni se topea. La sobreventa por ventas simultáneas es un **riesgo aceptado**, no un defecto a corregir.
-- **INV-3.** Un proveedor que deja de cumplir el contrato se degrada a stock cero de forma paulatina, sin bloquear el pipeline del resto.
+- **INV-3.** Un proveedor que deja de cumplir el contrato se degrada a stock cero de forma paulatina, sin bloquear el pipeline del resto. Dejar de cumplir el contrato equivale a salir del sistema: el corte a cero lo dispara la **baja del proveedor** (RF-40) y se propaga por el camino normal de la cola. Una caída transitoria de la fuente no produce ceros — congela la propagación y alerta (CU-07).
 
 
 ## 1. Problema y contexto desde la perspectiva de un multi-seller sin un integrador general
@@ -81,7 +84,7 @@ Para decidir si una corrida está corrupta, el sistema calcula un **coeficiente 
 | Señal | Qué mide | Cómo se calcula |
 |---|---|---|
 | `D` | SKU que desaparecieron | SKU que estaban en el snapshot previo y no vienen en esta corrida, sobre el total del snapshot previo |
-| `Z` | Ceros nuevos en masa | SKU que pasan de stock > 0 a stock 0, sobre los que tenían stock > 0 en el snapshot previo |
+| `Z` | Ceros nuevos en masa | SKU **presentes en la corrida** con stock 0 (explícito o en blanco) que en el snapshot previo tenían stock > 0, sobre los que tenían stock > 0 en el snapshot previo. Los SKU ausentes no cuentan acá: ya los mide `D` |
 
 Cada señal se normaliza contra su tolerancia y se combinan con un *noisy-OR*:
 
@@ -92,9 +95,11 @@ z = min(1, Z / 0.25)
 p = 1 - (1 - d)(1 - z)
 ```
 
+**Qué significan las tolerancias.** `0.10` y `0.25` son los valores que **saturan** cada señal (`d = 1` o `z = 1`), no los umbrales de disparo. Como la corrida pasa a cuarentena con `p > 0.5`, una sola señal alcanza para frenarla a la **mitad** de su tolerancia: `D > 5 %` o `Z > 12.5 %`. Las tolerancias son **fijas**: se justifican por lo que representan, no se ajustan contra el histórico de ningún proveedor.
+
 Se eligió *noisy-OR* y no un promedio ponderado porque una sola señal en su tope tiene que alcanzar para frenar la corrida: con suma ponderada, un feed que llega **vacío** (`D = 1`) no supera 0.5 salvo que se le asigne a esa señal un peso mayor que el de todas las demás juntas.
 
-**Ausencia y cero son lo mismo.** Cada corrida aceptada informa el stock completo del proveedor, no un incremento: un SKU que estaba en el snapshot previo y no viene en esta corrida **vale cero**, exactamente igual que si viniera con un cero explícito (RF-22). No se conserva su valor vigente. La razón es la misma que ordena todo el sistema: un SKU que el proveedor dejó de informar es un SKU que ya no puede respaldar, y sostener su último valor conocido es publicar oferta que no existe. Eso convierte a `D` en la señal crítica del coeficiente y no en una curiosidad estadística: **`D` es exactamente la proporción del catálogo previo del proveedor que la corrida está por poner en cero**, y los vínculos activos son un subconjunto de ese catálogo. La tolerancia de `0.10` deja entonces de medir "cuántos SKU faltan" y pasa a medir "cuánta oferta estoy dispuesto a apagar de golpe sin que lo revise una persona".
+**Ausencia y cero son lo mismo.** Cada corrida aceptada informa el stock completo del proveedor, no un incremento: un SKU que estaba en el snapshot previo y no viene en esta corrida **vale cero**, exactamente igual que si viniera con un cero explícito (RF-22). No se conserva su valor vigente. La razón es la misma que ordena todo el sistema: un SKU que el proveedor dejó de informar es un SKU que ya no puede respaldar, y sostener su último valor conocido es publicar oferta que no existe. Eso convierte a `D` en la señal crítica del coeficiente y no en una curiosidad estadística: **`D` es exactamente la proporción del catálogo previo del proveedor que la corrida está por poner en cero**, y los vínculos activos son un subconjunto de ese catálogo. El disparo de `D` —el 5 % del catálogo previo, según el párrafo anterior— deja entonces de medir "cuántos SKU faltan" y pasa a medir "cuánta oferta estoy dispuesto a apagar de golpe sin que lo revise una persona".
 
 **Los errores de parseo se tratan aparte, como diagnóstico y no como guarda.** Una fila cuyo valor de stock es un texto o un número negativo es un **error de parseo** y se descarta. Un valor en blanco **no** es un error de parseo: se interpreta como **sin stock**, es decir `0`, y el SKU no conserva su valor vigente. Cuando los errores de parseo superan el **10 % de las filas** de una corrida, el sistema emite una **alerta** al responsable de publicaciones, sin detener la corrida.
 
@@ -102,11 +107,19 @@ Que la alerta no frene nada no deja un agujero, porque las dos formas en que un 
 
 **Primera corrida.** No hay snapshot previo, así que `D` y `Z` no existen y el coeficiente no se evalúa: la corrida se acepta y queda como línea de base. Tampoco puede propagar nada, y no por una excepción sino por construcción — vincular exige una corrida aceptada (RF-16), así que en la primera todavía no hay ningún vínculo. Eso acota su modo de falla: una primera corrida truncada produce **menos SKU**, y los SKU ausentes no generan vínculos. El resultado es menos oferta publicada, nunca stock en cero.
 
-El coeficiente es un *score* con tolerancias fijas, no una probabilidad calibrada. Es además el punto de enganche del componente de ML de la Entrega 3 (sección 10): mismas señales, mismo umbral, pero los pesos aprendidos sobre corridas etiquetadas en lugar de tolerancias puestas a mano.
+**Una fuente caída no se apaga sola.** La cuarentena y el estado *degradado* **congelan** la propagación de esa fuente: el último stock publicado se mantiene mientras dure la falla. El sistema no convierte esa falla en ceros por sí solo, por más que se prolongue, y no hay umbral de tiempo que lo dispare. Apagar la oferta de un proveedor es una decisión humana con una sola vía: la **baja del proveedor** (RF-40), que sí propaga ceros de forma paulatina (**INV-3**).
 
-**CU-08 — Operar con una tienda degradada.** La API de MercadoLibre se cae, revoca un token o el worker acumula retraso por encima del umbral. El sistema marca la tienda como *degradada*, deja de consumir la cola para ella, conserva el trabajo pendiente y alerta al usuario para que continúe manualmente desde el frontend de MercadoLibre.
+Esto no contradice a CU-05. Ahí el usuario **decidió** cortar la alimentación y el sistema ejecuta esa decisión llevando a cero; acá la alimentación se interrumpió sola y la decisión todavía no se tomó. Sostener el último stock conocido de una fuente caída es un riesgo aceptado, acotado por la alerta y por el hecho de que la falla es visible en el tablero.
 
-El umbral de retraso es **12 horas**: si existe una tarea de actualización encolada para esa tienda que lleva más de 12 horas sin aplicarse, la tienda pasa a *degradada*. Es un techo, no un objetivo — el objetivo es el p95 de 6 horas de RNF-01. La razón de que sean horas y no minutos es aritmética y está en el límite de la API: **60 req/min por tienda son 3.600 actualizaciones por hora**, así que una corrida grande de un proveedor con muchos vínculos ocupa la cola de una tienda durante horas sin que nada esté fallando. Un umbral de minutos declararía degradada a una tienda perfectamente sana cada vez que llega trabajo real, y una alerta que se dispara en operación normal es una alerta que el operador aprende a ignorar.
+El coeficiente es un *score* con tolerancias fijas, no una probabilidad calibrada. Es también el **baseline y el fallback permanente** del componente de ML de la Entrega 3 (sección 10): el modelo es otro estimador sobre las mismas señales, y mientras no exista uno entrenado y válido, el que decide es este coeficiente.
+
+**CU-08 — Operar con una tienda que no está al día.** Hay dos formas distintas de que una tienda deje de reflejar el stock a tiempo, y el sistema las trata por separado porque le piden al usuario cosas opuestas.
+
+**Tienda *degradada*: el sistema no puede escribir.** La API de MercadoLibre no responde o el token fue revocado. El sistema deja de consumir la cola de esa tienda —no tiene sentido golpear una API que no contesta—, conserva el trabajo pendiente y alerta al usuario **traspasándole la operación**: mientras dure, esa tienda se maneja desde el frontend de MercadoLibre, que no depende del token de esta aplicación. Vuelve a *sana* cuando la API responde o el token se renueva, y la cola se reanuda desde donde quedó.
+
+**Tienda *atrasada*: el sistema escribe, pero llega tarde.** Existe una tarea de actualización encolada hace más de **12 horas** sin aplicarse. Acá la cola **sigue drenando**: suspenderla solo agrandaría el atraso. La alerta es de **capacidad, no de traspaso** —informa cuánto trabajo hay pendiente— y deliberadamente **no** invita a operar a mano: el usuario y el worker escribirían sobre la misma publicación, y el worker podría aplicar después un valor ya vencido. Vuelve a *sana* cuando ninguna tarea encolada supera las 12 horas.
+
+El umbral de retraso es **12 horas**: si existe una tarea de actualización encolada para esa tienda que lleva más de 12 horas sin aplicarse, la tienda pasa a *atrasada*. Es un techo, no un objetivo — el objetivo es el p95 de 6 horas de RNF-01. La razón de que sean horas y no minutos es aritmética y está en el límite de la API: **60 req/min por tienda son 3.600 actualizaciones por hora**, así que una corrida grande de un proveedor con muchos vínculos ocupa la cola de una tienda durante horas sin que nada esté fallando. Un umbral de minutos marcaría como atrasada a una tienda perfectamente sana cada vez que llega trabajo real, y una alerta que se dispara en operación normal es una alerta que el operador aprende a ignorar.
 
 **CU-09 — Auditar qué se escribió.** Cualquiera de los dos usuarios consulta, para un SKU o una publicación, el historial de actualizaciones: qué valor tenía, qué valor se envió, cuándo y qué respondió la API.
 
@@ -167,14 +180,14 @@ Los IDs son estables: cuando un requisito se elimina, su número **no se reutili
 | RF-22 | Cada corrida aceptada **reemplaza** el estado vigente del proveedor (SKU → stock): la corrida informa el inventario completo, no un incremento, y un SKU que no aparece **vale cero**, igual que si viniera con cero explícito. Ese estado es el único producto de la ingesta: no escribe en ninguna tienda | Must | POC |
 | RF-45 | Cada actualización del estado vigente notifica a un worker que **compara el stock de los vínculos de ese proveedor contra el estado vigente** y encola una tarea de actualización **solo por cada diferencia** | Must | POC |
 | RF-46 | Encolar es idempotente por vínculo: la cola admite **a lo sumo una tarea pendiente por vínculo** y una tarea nueva **reemplaza** a la pendiente en lugar de acumularse, conservando su posición de prioridad. Se escribe el último valor conocido, nunca una secuencia de valores viejos | Must | POC |
-| RF-23 | Cola de trabajo con prioridad heredada del proveedor | Must | POC |
-| RF-24 | Escritura de stock contra la API respetando el límite de consumo por tienda —**60 req/min**— con espera cuando se agota la cuota | Must | POC |
+| RF-23 | Cola de trabajo con prioridad heredada del proveedor y con **envejecimiento**: una tarea de baja prioridad no espera indefinidamente detrás de las de mayor prioridad, de modo que el p100 de RNF-01 sea alcanzable sobre todos los vínculos activos y no solo sobre los de prioridad alta (el mecanismo se especifica en el SRD) | Must | POC |
+| RF-24 | Escritura de stock contra la API respetando el límite de consumo por tienda del endpoint de actualización de stock —**60 req/min**— con espera cuando se agota la cuota. Un **429** se trata como error transitorio y se reintenta con backoff (RF-26), nunca como dead letter | Must | POC |
 | RF-48 | El límite de consumo es **por tienda y compartido** entre la escritura de stock y la lectura de catálogo (webhooks, validación de IDs cargados a mano, relecturas manuales). Todas las llamadas a una tienda pasan por el mismo control de cuota; la lectura de catálogo disparada a mano cede ante las tareas de actualización pendientes | Must | MVP |
 | RF-25 | Idempotencia: reprocesar una corrida no produce efectos duplicados | Must | POC |
 | RF-26 | Reintentos con backoff ante errores transitorios | Must | POC |
 | RF-27 | *Dead letter* persistida y revisable para errores no reintentables, con el delta, la respuesta de la API y el momento de la falla | Must | MVP |
 | RF-28 | Validación de la corrida y cuarentena ante corrupción severa; una corrida en cuarentena no propaga ningún delta | Must | MVP |
-| RF-29 | Estado *degradado* por proveedor y por tienda, con alerta al usuario y suspensión de la propagación afectada. Para una tienda el disparador por retraso es una tarea de actualización **encolada más de 12 horas** sin aplicarse | Must | MVP |
+| RF-29 | Estados de excepción por proveedor y por tienda, con alerta al usuario. **Degradado:** la fuente no responde o entrega corridas corruptas, o la API de la tienda no responde o su token fue revocado; se suspende la propagación afectada y la alerta traspasa la operación al usuario. **Atrasada** (solo tienda): existe una tarea de actualización **encolada más de 12 horas** sin aplicarse; la cola **sigue drenando** y la alerta es de capacidad, sin traspaso de la operación. Ningún estado de excepción propaga stock cero por sí solo | Must | MVP |
 | RF-47 | **Regla única de corte:** apagar un vínculo, dar de baja un proveedor y desconectar una tienda disparan la misma acción — encolar stock cero para todas las publicaciones alcanzadas y desactivar el vínculo recién después. Ninguna publicación queda ofreciendo el último stock conocido de una fuente que dejó de alimentarla | Must | POC |
 | RF-40 | Baja de un proveedor: aplica RF-47 sobre todos sus vínculos **de forma paulatina**, sin que esa baja masiva detenga el procesamiento del resto (**INV-3**) | Should | MVP |
 
@@ -192,10 +205,22 @@ Los IDs son estables: cuando un requisito se elimina, su número **no se reutili
 
 | ID | Requisito | Prioridad | Entrega |
 |---|---|---|---|
-| RF-35 | Simulador de MercadoLibre que implementa el contrato real: OAuth 2.0, catálogo, actualización de stock, webhooks, el límite de 60 req/min por tienda y los errores reintentables y no reintentables | Must | POC |
+| RF-35 | Simulador de MercadoLibre que implementa el contrato real: OAuth 2.0, catálogo, actualización de stock, webhooks, el límite de 60 req/min por tienda con respuesta **429** al superarlo, la **semántica de stock 0** (escribir `available_quantity = 0` pausa la publicación con subestado `out_of_stock`; un valor mayor a 0 la reactiva) y los errores reintentables y no reintentables | Must | POC |
 | RF-36 | Generador de catálogo sintético configurable (tiendas, publicaciones por tienda, proporción de SKU coincidentes con el feed real, publicaciones muertas, latencia y tasa de error) | Must | POC |
 | RF-37 | Generador de feeds sintéticos configurable (volumen, separador, encabezado, filas corruptas, deriva de stock) | Must | POC |
 | RF-38 | Interfaz de marketplace única con dos implementaciones detrás —simulada y real— seleccionables por configuración | Must | POC |
+
+### Machine learning
+
+Estos requisitos se agregaron después de la primera numeración, por eso van al final y no intercalados. Derivan de [ADR-0003](../adr/0003-componente-ml-deteccion-anomalias.md) y se detallan en §10.
+
+| ID | Requisito | Prioridad | Entrega |
+|---|---|---|---|
+| RF-49 | Cada corrida recibe un puntaje `p_ml` del modelo y entra en cuarentena si supera el umbral vigente del modelo, fijado durante su evaluación y versionado junto con él. Se registran tanto `p_ml` como el coeficiente de CU-07, para poder compararlos corrida a corrida | Must | MVP |
+| RF-50 | Si no hay modelo entrenado, o el vigente no está disponible o es inválido, la corrida se evalúa con el coeficiente noisy-OR de CU-07 y la ingesta **no se detiene**. El coeficiente es el fallback permanente, no un estado transitorio hasta que el modelo exista | Must | MVP |
+| RF-51 | Pipeline de entrenamiento reproducible con un solo comando: dataset versionado, semilla fija, métricas e artefacto del modelo versionado | Must | MVP |
+| RF-52 | Cada corrida evaluada registra la versión del modelo que la puntuó; existe un procedimiento documentado de actualización y de rollback | Should | MVP |
+| RF-53 | Monitoreo del modelo en el tablero de salud: tasa de cuarentenas, deriva de las señales y discrepancias entre el modelo y el baseline | Should | MVP |
 
 ### Fuera de este PRD (*Won't have this time*)
 
@@ -214,12 +239,12 @@ Los IDs son estables: cuando un requisito se elimina, su número **no se reutili
 
 | ID | Requisito | Objetivo verificable |
 |---|---|---|
-| RNF-01 | **Latencia de propagación** | **p95 en menos de 6 horas y p100 en menos de 12 horas**, medido **desde que el sistema conoce el cambio hasta que la tienda lo refleja**, sobre el 100 % de los vínculos activos. Superar las 12 horas no es un incumplimiento silencioso: declara la tienda *degradada* (RF-29). No cuentan los vínculos inactivos por publicación muerta o tienda degradada |
+| RNF-01 | **Latencia de propagación** | **p95 en menos de 6 horas y p100 en menos de 12 horas**, medido **desde que el sistema conoce el cambio hasta que la tienda lo refleja**, sobre el 100 % de los vínculos activos. Se verifica con un **observador externo al sistema** que registra el drenado de la cola, no con la métrica que el propio sistema expone. Superar las 12 horas no es un incumplimiento silencioso: declara la tienda *atrasada* (RF-29). No cuentan los vínculos inactivos por publicación muerta o tienda degradada |
 | RNF-01b | **Latencia de la fuente** | El sistema tolera fuentes con hasta **1 hora** de refresco. Esa latencia es anterior a la ventana de RNF-01 y no se le imputa |
-| RNF-02 | **Throughput de ingesta** | Una corrida de 650.000 SKU procesada (descarga, parseo, normalización, cálculo de deltas) en menos de 10 minutos |
+| RNF-02 | **Throughput de ingesta** | Una corrida de 255.000 SKU procesada (descarga, parseo, normalización, cálculo de deltas) en menos de 10 minutos |
 | RNF-03 | **No pérdida silenciosa** | Todo delta termina en uno de tres estados terminales: aplicado, en dead letter, o descartado por cuarentena con traza. Cero deltas sin estado |
 | RNF-04 | **Idempotencia** | Reprocesar la misma corrida dos veces produce el mismo estado final y cero escrituras adicionales a la API. El encolado también es idempotente por vínculo (RF-46): N notificaciones sobre el mismo vínculo dejan una sola tarea pendiente, con el último valor |
-| RNF-05 | **Degradación explícita** | Ante falla de una fuente o de una tienda, el sistema alerta y suspende solo la parte afectada; las demás siguen operando |
+| RNF-05 | **Degradación explícita** | Ante falla de una fuente o de una tienda, el sistema alerta y suspende solo la parte afectada; las demás siguen operando. El atraso de una tienda (RF-29) alerta sin suspender: la cola sigue drenando. Ninguna falla propaga stock cero por sí sola |
 | RNF-06 | **Durabilidad de la cola** | Las tareas de actualización se persisten: una caída del worker o del broker con trabajo pendiente no pierde ninguna. Entrega al menos una vez, apoyada en la idempotencia de RNF-04. Como red de seguridad, una tarea perdida se vuelve a derivar comparando el estado vigente contra el último valor confirmado de cada publicación |
 | RNF-06b | **Cota de la cola** | Por el reemplazo de RF-46, la cola pendiente de una tienda nunca supera su cantidad de vínculos activos, sin importar cuántas corridas se acumulen. Verificado inyectando corridas más rápido de lo que la cuota de 60 req/min permite drenar |
 | RNF-07 | **Seguridad de credenciales** | Secretos solo por variables de entorno o almacén cifrado; cero credenciales en el repositorio, en la interfaz o en los logs. Verificado en CI |
@@ -231,8 +256,10 @@ Los IDs son estables: cuando un requisito se elimina, su número **no se reutili
 | RNF-13 | **Escalabilidad conocida** | El diseño soporta el orden de 10⁵ vínculos activos; los cuellos de botella hacia los **10⁸ que exige el sistema original** están identificados y explicados, sin implementar esa escala |
 | RNF-14 | **Procesar cambios, no inventarios** | El trabajo contra el recurso escaso —la API— es proporcional a los deltas y no al catálogo: una corrida sin cambios produce **cero escrituras**. La comparación interna sí recorre los vínculos del proveedor, pero ocurre contra la base propia y no consume cuota. Verificado midiendo llamadas a la API por corrida contra cantidad de deltas |
 | RNF-16 | **Contrato de la interfaz programática** | La vía programática de RF-41 está descrita en un formato legible por máquina (OpenAPI), versionado junto al sistema |
+| RNF-17 | **Evaluación honesta del modelo** | Sobre modos de corrupción **no vistos** en el entrenamiento, el modelo iguala o supera el recall del baseline de CU-07 con una tasa de falsos positivos menor o igual, medida sobre histórico real. Todo resultado declara qué parte de la evaluación es sintética |
+| RNF-18 | **Costo de inferencia** | Puntuar una corrida de 255.000 SKU agrega menos de 1 minuto al tiempo de RNF-02 |
 
-**De dónde salen las 6 y las 12 horas.** No son un número de confort: se derivan del único recurso que el sistema no controla. La API permite **60 req/min por tienda**, o sea **3.600 actualizaciones por hora**, **21.600 en 6 horas** y **43.200 en 12**. Ese es el techo de trabajo que una tienda puede absorber, y ninguna decisión de arquitectura propia lo mueve —ni más workers, ni más máquinas, ni una cola más rápida—. Un objetivo de minutos sería un objetivo que el sistema no puede cumplir ni fallar por mérito propio: lo cumpliría cuando el volumen de deltas fuera chico y lo incumpliría cuando fuera grande, midiendo el tamaño de la corrida y no la calidad de la implementación. Con el techo a 12 horas, en cambio, incumplir significa algo verificable —la cola no drena al ritmo que la cuota permite— y por eso la violación dispara el estado *degradado* en lugar de quedar en un reporte.
+**De dónde salen las 6 y las 12 horas.** No son un número de confort: se derivan del único recurso que el sistema no controla. La API limita el **endpoint de actualización de stock a 60 req/min por tienda** —los límites por endpoint son más estrictos que el límite general por vendedor, y es el del endpoint el que acota este sistema—, o sea **3.600 actualizaciones por hora**, **21.600 en 6 horas** y **43.200 en 12**. Ese es el techo de trabajo que una tienda puede absorber, y ninguna decisión de arquitectura propia lo mueve —ni más workers, ni más máquinas, ni una cola más rápida—. Un objetivo de minutos sería un objetivo que el sistema no puede cumplir ni fallar por mérito propio: lo cumpliría cuando el volumen de deltas fuera chico y lo incumpliría cuando fuera grande, midiendo el tamaño de la corrida y no la calidad de la implementación. Con el techo a 12 horas, en cambio, incumplir significa algo verificable —la cola no drena al ritmo que la cuota permite— y por eso la violación dispara el estado *atrasada* en lugar de quedar en un reporte.
 
 El mismo razonamiento explica por qué el **reemplazo por vínculo de RF-46** es un requisito y no una optimización: con 3.600 escrituras por hora como techo, una cola que acumula una tarea por cada corrida gasta la cuota escribiendo valores que ya están vencidos. El reemplazo hace que el trabajo pendiente sea proporcional a la **cantidad de vínculos desactualizados** y no a la cantidad de corridas atrasadas, que es la misma idea de RNF-14 aplicada a la cola.
 
@@ -243,10 +270,10 @@ Medibles, y verificables desde el propio sistema:
 
 1. **Integrar sin programar.** Dar de alta un proveedor nuevo con un formato ya soportado toma menos de 10 minutos y **cero líneas de código**. Se demuestra en vivo dando de alta una fuente que el equipo no usó durante el desarrollo.
 2. **Escalar por configuración.** Conectar una tienda adicional al mismo proveedor no agrega componentes ni código: el catálogo se lee, los vínculos se sugieren y la sincronización arranca. Se demuestra pasando de 1 a K tiendas sobre el mismo feed.
-3. **Propagación oportuna.** RNF-01 cumplido —p95 bajo 6 horas, ninguna tarea por encima de 12— medido sobre la métrica de latencia que el propio sistema expone, durante una corrida completa del feed real.
+3. **Propagación oportuna.** RNF-01 cumplido —p95 bajo 6 horas, ninguna tarea por encima de 12— durante una corrida completa del feed real, medido por un **observador externo al sistema** que registra, para cada delta, el tiempo entre que se encola y que la tienda lo refleja. Que la métrica sea externa es deliberado: el sistema no se califica a sí mismo.
 4. **Nada se pierde en silencio.** RNF-03 cumplido: la suma de deltas aplicados, en dead letter y descartados por cuarentena es igual al total de deltas calculados, en toda corrida.
 5. **Cero propagación de basura.** Ninguna corrida marcada como corrupta produce escrituras a la API. Se demuestra inyectando un feed truncado con el generador sintético.
-6. **El operador se entera.** Ante una tienda caída, un token revocado y un feed corrupto, el sistema produce la alerta correspondiente y el estado degradado queda visible en el tablero. Se demuestra provocando los tres casos.
+6. **El operador se entera.** Ante una tienda caída, un token revocado y un feed corrupto, el sistema produce la alerta correspondiente y el estado de excepción queda visible en el tablero. Se demuestra provocando los tres casos.
 7. **Trazabilidad completa.** Para cualquier publicación se puede reconstruir qué stock se le escribió, cuándo, desde qué corrida y de qué fuente.
 
 ## 6. Supuestos
@@ -257,10 +284,10 @@ Medibles, y verificables desde el propio sistema:
 | S-02 | El SKU es clave de cruce confiable entre el catálogo del proveedor y el de la tienda | El matching por SKU pierde sentido y haría falta un mecanismo de resolución de identidad, que no está en este alcance |
 | S-03 | El stock que informa el proveedor es la verdad disponible; el sistema no lo audita contra la realidad física | El sistema propaga números equivocados sin poder detectarlo; se mitiga parcialmente con la validación de corrida |
 | S-04 | El contrato de la API de MercadoLibre (OAuth 2.0, endpoints de catálogo y stock, webhooks, límites) se mantiene estable durante la cursada | La implementación real se rompe; el simulador mantiene el sistema demostrable mientras se adapta |
-| S-05 | El acceso al feed real de Celesa (~650.000 SKU, actualización cada 30 minutos) sigue disponible para el equipo | Se trabaja con el generador de feeds sintéticos, que ya es parte del sistema |
+| S-05 | El acceso al feed real de Celesa (~255.000 SKU, actualización cada 30 minutos) sigue disponible para el equipo | Se trabaja con el generador de feeds sintéticos, que ya es parte del sistema |
 | S-06 | Simular el marketplace es representativo del comportamiento real en lo que importa: autenticación, límites de consumo y taxonomía de errores | El sistema funcionaría contra el simulador y no contra la API real; se mitiga manteniendo una única interfaz de marketplace con implementación real intercambiable |
 | S-07 | El volumen de deltas por corrida es una fracción chica del total de vínculos | El dimensionamiento cambia de orden: el sistema pasa de propagar cambios a reescribir catálogos, y RNF-01 deja de ser alcanzable con los límites de consumo de la API |
-| S-08 | El límite de consumo de la API es de **60 requests por minuto por tienda**, extraído de la documentación oficial de MercadoLibre, y se mantiene durante el proyecto | El caudal máximo por tienda cambia y con él el dimensionamiento. Si baja, los objetivos de RNF-01 (p95 en 6 horas, p100 en 12) se cumplen para la parte prioritaria de la cola y no para toda: la prioridad por proveedor pasa de ser una comodidad a ser el mecanismo que decide qué se actualiza |
+| S-08 | El límite de consumo del **endpoint de actualización de stock** es de **60 requests por minuto por tienda** —más estricto que el límite general por vendedor, como es habitual endpoint por endpoint— y se mantiene durante el proyecto | El caudal máximo por tienda cambia y con él el dimensionamiento. Si baja, los objetivos de RNF-01 (p95 en 6 horas, p100 en 12) se cumplen para la parte prioritaria de la cola y no para toda: la prioridad por proveedor pasa de ser una comodidad a ser el mecanismo que decide qué se actualiza |
 
 ## 7. Limitaciones conocidas
 
@@ -280,7 +307,7 @@ Clasificados con **ROAM**: *Owned* (vigilado, sin plan todavía), *Mitigated* (h
 
 | ID | Riesgo | Prob. | Impacto | ROAM | Plan |
 |---|---|---|---|---|---|
-| **R-01** | El caudal de sincronización supera el límite de consumo de la API de MercadoLibre | Alta | Crítico | Owned | El límite es de **60 req/min por tienda** (documentación oficial de la API), o sea **3.600 actualizaciones por hora y por tienda**: es una cota dura que ninguna decisión de infraestructura propia mueve, y además es **compartida con la lectura de catálogo** (RF-48). Tres mecanismos la absorben: los objetivos de latencia se fijan en el orden de horas y se derivan de esa cota (RNF-01), el reemplazo por vínculo evita gastar cuota escribiendo valores ya vencidos (RF-46) y la prioridad por proveedor decide qué se actualiza primero cuando la cola no drena (RF-23). El simulador implementa el mismo límite (RF-35) para que el POC lo ejercite en serio. Es el riesgo técnico dominante y el que el POC tiene que dejar resuelto |
+| **R-01** | El caudal de sincronización supera el límite de consumo de la API de MercadoLibre | Alta | Crítico | Owned | El **endpoint de actualización de stock** está limitado a **60 req/min por tienda** —más estricto que el límite general por vendedor—, o sea **3.600 actualizaciones por hora y por tienda**: es una cota dura que ninguna decisión de infraestructura propia mueve, y además es **compartida con la lectura de catálogo** (RF-48). Tres mecanismos la absorben: los objetivos de latencia se fijan en el orden de horas y se derivan de esa cota (RNF-01), el reemplazo por vínculo evita gastar cuota escribiendo valores ya vencidos (RF-46) y la prioridad con envejecimiento decide qué se actualiza primero cuando la cola no drena (RF-23). El simulador implementa el mismo límite (RF-35) para que el POC lo ejercite en serio. Es el riesgo técnico dominante y el que el POC tiene que dejar resuelto |
 | **R-02** | Un feed corrupto propagado sin validar pone en cero el stock de miles de publicaciones | Media | Crítico | Mitigated | Coeficiente de sospecha y cuarentena por corrida (CU-07, RF-28). Se demuestra inyectando un feed truncado con el generador sintético |
 | **R-03** | El cruce por SKU propone menos vínculos de los reales | Media | Medio | Mitigated | El matching es una **sugerencia**, no un automatismo: RF-17 permite buscar y vincular a mano, así que un error de cruce degrada el resultado sin bloquearlo |
 | **R-04** | El sistema funciona contra el simulador y falla contra la API real | Media | Alto | Mitigated | Una única interfaz de marketplace con dos implementaciones (RF-38); el simulador implementa el contrato real, no uno conveniente. Queda como limitación declarada: la integración real está validada por contrato, no por producción |
@@ -288,13 +315,65 @@ Clasificados con **ROAM**: *Owned* (vigilado, sin plan todavía), *Mitigated* (h
 
 ## 9. Roadmap a POC y MVP
 
-**POC (Entrega 2) — resolver el riesgo técnico.** El riesgo más grande es el motor de sincronización contra la API: límites de consumo, idempotencia y ciclo de vida de los tokens. El POC lo resuelve sobre una ruta completa y angosta: **un proveedor real (Celesa) + una tienda contra el contrato real de MercadoLibre**, con stock propagándose de punta a punta y auditado. Incluye el simulador y los generadores, porque sin ellos no hay forma de ejercitar los caminos de falla. Interfaz mínima. CI y tests operativos.
+**Criterios que ordenan el plan.** (1) El riesgo primero: el motor contra la cuota de la API se resuelve antes que cualquier funcionalidad de interfaz. (2) El simulador antes que el motor, porque sin él no hay forma de ejercitar los caminos de falla. (3) 1 proveedor × 1 tienda antes de N × K. (4) CI y tests desde el primer hito, no al final.
 
-**MVP (Entrega 3) — generalizar y operar.** N proveedores por K tiendas, el segundo formato de origen (PostgreSQL), webhooks de catálogo, cuarentena, dead letters, estados degradados, tablero de salud completo y observabilidad verificable. Más el componente de ML, una vez definido.
 
-## 10. Pendiente de definir
+### 9.1 POC — Entrega 2
 
-- **El componente de Machine Learning** que exige la Entrega 3: **detección de anomalías en corridas de feed**, alimentada por datos que el sistema ya genera (histórico de snapshots y auditoría de actualizaciones). Reemplaza las tolerancias fijas del coeficiente de CU-07 por pesos aprendidos sobre corridas etiquetadas, sobre las mismas señales. Se decide antes de cerrar la Entrega 1 y se registra con un ADR.
+El riesgo más grande es el motor de sincronización contra la API: cuota, idempotencia y ciclo de vida de los tokens (R-01). El POC lo resuelve sobre una ruta completa y angosta: **el proveedor real (Celesa) + una tienda simulada que implementa el contrato real de MercadoLibre**, con stock propagándose de punta a punta y auditado.
+
+| Hito | Qué se construye | Requisitos | Depende de | Criterio de salida verificable |
+|---|---|---|---|---|
+| **P0 · Fundaciones** | Repo privado compartido con la cátedra, estructura de servicios, `docker-compose` base (PostgreSQL, Redis, almacenamiento de objetos), CI con build, tests y chequeo de secretos, plantilla de ADR | RNF-07, RNF-10, RNF-12 | — | CI en verde sobre `main`; `make up` levanta la infraestructura; el historial muestra commits de cada integrante |
+| **P1 · Simulador y marketplace** | Interfaz de marketplace y simulador: OAuth 2.0 completo, catálogo paginado, escritura de stock con pausa por `out_of_stock`, cuota de 60 req/min con 429, errores reintentables y no reintentables; generador de catálogo | RF-35, RF-36, RF-38 | P0 | Contract tests en verde; 429 al superar la cuota; token revocado a mitad de corrida se provoca a demanda |
+| **P2 · Ingesta** | Alta de proveedor `.csv` con preview y fetch de prueba, corrida contra Celesa real, snapshot crudo inmutable, normalización, estado vigente por UPSERT; generador de feeds | RF-04, 06, 07, 08, 20, 21, 22, 37 · RNF-02 | P0 | Corrida real de ~255.000 SKU dentro del tiempo de RNF-02; re-ejecutarla no duplica efectos; tests con las anomalías reales del feed (duplicados, ISBN alfanuméricos) |
+| **P3 · Motor** | Comparador, cola con prioridad y envejecimiento, reemplazo por vínculo, worker de publicación con cuota, reintentos con backoff, idempotencia, auditoría | RF-23, 24, 25, 26, 30, 45, 46 · RNF-04, 06, 06b | P1, P2 | Test de la propiedad "cola pendiente ≤ vínculos activos"; cero escrituras extra al re-ejecutar; auditoría consultable por publicación |
+| **P4 · Tiendas y vínculos** | Login, secretos cifrados, alta de tienda por OAuth, lectura de catálogo en dos etapas, sugerencia y aprobación de vínculos, ON/OFF con la regla de corte, comparación inicial al vincular | RF-01, 03, 11, 12, 16, 17, 18, 19, 39, 43, 47 · RNF-08 | P1, P3 | Flujo OAuth completo contra el simulador; INV-1 cubierta por test; apagar un vínculo deja la publicación en cero |
+| **P5 · Cierre del POC** | Flujo punta a punta Celesa real → 1 tienda simulada; interfaz mínima; README; ADRs; SRD sin ML; video | Entrega 2 | P2–P4 | `make demo` reproduce el flujo completo, incluidos 429 y token revocado |
+
+P1 y P2 pueden avanzar en paralelo: no se tocan hasta P3. **Mockeado o simplificado en el POC**, y así declarado en el README: interfaz mínima, disparo manual de la ingesta en lugar de programación por proveedor, y dead letters registradas como fallo terminal en la auditoría —RF-27 completo llega en M4—, de modo que ningún delta quede sin estado terminal.
+
+### 9.2 MVP — Entrega 3
+
+Generalizar y operar: N proveedores por K tiendas, el segundo formato de origen, catálogo vivo, gobernanza de corridas, observabilidad verificable y el componente de ML.
+
+| Hito | Qué se construye | Requisitos | Depende de | Criterio de salida verificable |
+|---|---|---|---|---|
+| **M1 · N × K** | Varios proveedores y tiendas, modificación y baja de proveedores, frecuencia de ingesta configurable, vista de tiendas | RF-09, 10, 15 | P5 | Pasar de 1 a K tiendas sobre el mismo feed sin tocar código (criterio de éxito 2) |
+| **M2 · Segundo formato** | Proveedor sobre tabla PostgreSQL | RF-05 | P5 | Alta de un proveedor nuevo en menos de 10 minutos y sin código (criterio 1) |
+| **M3 · Catálogo vivo** | Webhooks de publicación nueva, carga manual de IDs, cuota compartida por tienda | RF-13, 14, 48 | P5 | Test: la lectura de catálogo disparada a mano cede ante las escrituras pendientes |
+| **M4 · Gobernanza y degradación** | Validación y cuarentena por corrida, alerta de errores de parseo, dead letters, publicaciones muertas, estados *degradado* y *atrasada*, baja de proveedor y desconexión de tienda, reproceso manual | RF-27, 28, 29, 32, 34, 40, 42, 44 · RNF-03, 05 | M1 | Los tres casos del criterio 6 se provocan con el simulador; la suma de estados terminales iguala los deltas calculados (criterio 4); una tienda atrasada sigue drenando y una degradada no |
+| **M5 · Machine learning** | Dataset versionado desde el histórico de snapshots, entrenamiento reproducible, evaluación contra el baseline, serving con fallback, monitoreo | RF-49 a 53 · RNF-17, 18 | M4 + histórico suficiente | `make train` reproduce las métricas; el modelo corre en sombra sobre corridas reales; el fallback al baseline está probado |
+| **M6 · Observabilidad** | Logging estructurado con identificador de corrida, métricas por feed y por tienda, health checks, tablero de salud | RF-31, 33 · RNF-09 | M4 | El tablero muestra latencia, dead letters y estados de excepción |
+| **M7 · Programático y cloud** | API descrita en OpenAPI, imágenes construidas en CI, configuración por entorno, despliegue efímero en free tier | RF-41 · RNF-11, 16 | M1 | El pipeline construye y publica imágenes; el despliegue se demuestra |
+| **M8 · Verificación y cierre** | Medición de RNF-01 y RNF-14, los 7 criterios de éxito, SRD completo con ML, ADRs, video | Entrega 3 | Todos | Tabla criterio → evidencia, completa y reproducible |
+
+RNF-13 (escalabilidad conocida) se argumenta en el SRD de cada entrega, no tiene hito propio.
+
+### 9.3 Control, plan B y orden de recorte
+
+- **Cada hito cierra con** tests, README actualizado y, si hubo decisión estructural, un ADR que compare alternativas. Al inicio de cada bloque se absorben las correcciones de la cátedra a la entrega anterior.
+- **Puntos de control.** Fin de P1: si el simulador no reproduce la semántica de cuota, no se avanza a P3. Fin de P3: R-01 queda resuelto o se replantea el objetivo de latencia. Inicio de M5: si hay pocas corridas archivadas, el modelo arranca en modo sombra y el baseline sigue decidiendo (RF-50).
+- **Plan B del POC.** La consigna admite un POC con interfaz mínima o inexistente. Si al cerrar P4 el tiempo no alcanza, las acciones de RF-06 y RF-17 se ejecutan por API o por línea de comandos en lugar de por pantalla, y el POC se cierra sobre el motor (P1–P3) con datos reales.
+- **Orden de recorte del MVP**, si el tiempo no alcanza, de lo primero que se cae a lo último: RF-34 → RF-41 y RNF-16 → RF-10 → RF-09 → RF-42 → RF-32 → RF-14 → RF-44. **RF-40 no entra en esa lista**: es lo único que verifica INV-3, así que recortarlo dejaría una invariante heredada sin demostrar. Ningún *Must* se recorta sin re-validar con la cátedra.
+
+## 10. Componente de Machine Learning
+
+**Decisión**, comparada contra alternativas en [ADR-0003](../adr/0003-componente-ml-deteccion-anomalias.md): **detección de anomalías en corridas de feed**. Un modelo liviano estima un puntaje `p_ml ∈ [0,1]` por corrida, a partir de señales comparadas contra el último snapshot válido, y la corrida entra en cuarentena si lo supera.
+
+**Qué relación tiene con el coeficiente de CU-07.** El modelo **no lo reemplaza ni recalibra sus tolerancias**, que siguen fijas. Es **otro estimador sobre las mismas señales**, que compite contra él: CU-07 queda como **baseline** contra el cual medir y como **fallback permanente** (RF-50). Mientras no exista un modelo entrenado y válido, el que decide es el coeficiente, y eso no es un estado transitorio sino el comportamiento por defecto del sistema.
+
+**Señales candidatas:** `D`, `Z`, variación relativa de la cantidad de filas y del stock total, tasa de errores de parseo, y `D` restringido a los SKU con vínculo activo —es decir, la oferta que la corrida realmente apagaría—.
+
+**Datos y etiquetas:**
+
+- **Corridas reales archivadas**, que se asumen normales salvo las que la operación haya puesto en cuarentena.
+- **Corridas con corrupción inyectada** por el generador de feeds (RF-37), separadas por modo de falla: truncado, columna de stock vacía, cambio de encoding, separador distinto.
+- **Negativos difíciles:** caídas grandes pero legítimas, por movimiento masivo de stock real. El sistema tiene que distinguirlas de un feed truncado, y son el caso donde un modelo puede superar al baseline.
+
+Las etiquetas positivas son sintéticas y se declaran como tales. Para que la evaluación no sea circular se sigue el protocolo de ADR-0003: *leave-one-mode-out* (entrenar con algunos modos de corrupción y evaluar sobre los no vistos), negativos difíciles incluidos, y falsos positivos medidos sobre histórico real y nunca sobre corridas sintéticas.
+
+**Requisitos asociados:** RF-49 a RF-53 (§3), RNF-17 y RNF-18 (§4).
 
 
 ## 11. Glosario
@@ -305,16 +384,97 @@ Los términos se usan como los define el sistema original, recortados a lo que e
 |---|---|
 | **Proveedor** | Una fuente de stock: propia o de un tercero, indistinto. Lo que varía es el origen (`.csv` sobre SFTP / endpoint / URL, o tabla PostgreSQL) y las credenciales. Es la **bodega** del sistema original |
 | **Tienda** | Una cuenta de MercadoLibre de la empresa, con su catálogo y su autenticación propia. Es la **vitrina** del sistema original; "sitio" es el término de MercadoLibre para lo mismo |
-| **SKU** | El identificador de un producto en el catálogo de un proveedor. En este dominio es el **ISBN**, que es lo que hace posible cruzar catálogos entre fuentes y contra MercadoLibre |
+| **SKU** | El identificador de un producto en el catálogo de un proveedor. En este dominio es el **ISBN**, que es lo que hace posible cruzar catálogos entre fuentes y contra MercadoLibre. Se trata siempre como **cadena**, nunca como número: hay ISBN alfanuméricos válidos (§12) |
 | **MLX** | El identificador de una publicación de MercadoLibre. La X es el país: `MLA1234`, `MLC1234` |
 | **Vínculo** | La unidad de trabajo del sistema: la relación entre un SKU de un proveedor y un MLX de una tienda. Es un **interruptor** ON/OFF, no un alta y una baja: apagarlo conserva su historia |
 | **Corrida** | Una ejecución de ingesta sobre un proveedor: descarga, snapshot, normalización, validación y cálculo de deltas |
 | **Snapshot** | La copia cruda e inmutable de lo que la fuente devolvió en una corrida, guardada tal cual llegó. Es lo que permite reprocesar y auditar |
 | **Estado vigente** | El stock que el sistema da por bueno para cada SKU de un proveedor. Cada corrida aceptada lo **reemplaza** completo: un SKU que no viene en la corrida queda en cero. Es el único producto de la ingesta y la entrada del worker comparador |
 | **Delta** | Un cambio de stock de un SKU respecto del último estado conocido. Es lo único que se propaga: el sistema procesa cambios, no inventarios completos |
-| **Publicación muerta** | Un MLX que rechaza actualizaciones de forma persistente (5 fallos consecutivos). El sistema la marca, deja de emitirle pedidos y la expone. **No la repara** |
+| **Publicación muerta** | Un MLX que rechaza actualizaciones de forma persistente (5 fallos consecutivos). El sistema la marca, deja de emitirle pedidos y la expone. **No la repara**. No confundir con una publicación pausada por `out_of_stock`: esa está sana y se reactiva sola cuando se le escribe stock mayor a cero |
 | **Dead letter** | Una actualización que falló con error no reintentable o que agotó sus intentos, persistida con su delta, la respuesta de la API y el momento de la falla, para revisión humana |
 | **Cuarentena** | El estado de una corrida cuyo coeficiente de sospecha superó el umbral. Una corrida en cuarentena **no propaga ningún delta** |
-| **Degradado** | El estado de un proveedor cuya fuente no responde o entrega corridas corruptas, o de una tienda cuya API falla o tiene una tarea encolada hace más de **12 horas**. La propagación afectada se suspende; el resto sigue operando |
+| **Degradado** | El estado de un proveedor cuya fuente no responde o entrega corridas corruptas, o de una tienda cuya API no responde o cuyo token fue revocado. La propagación afectada se **suspende** y la operación de esa tienda se traspasa al usuario; el resto sigue operando. Un proveedor degradado **no** se lleva a cero por sí solo: eso lo dispara la baja del proveedor (RF-40) |
+| **Atrasada** | El estado de una tienda con una tarea de actualización encolada hace más de **12 horas** sin aplicarse. A diferencia de *degradada*, la cola **sigue drenando**: es una alerta de capacidad, no una suspensión, y no traspasa la operación al usuario |
 | **Sobreventa** | Vender en dos tiendas la misma unidad física. Consecuencia aceptada de ofrecer el stock completo en todas las tiendas vinculadas |
 | **Simulador de marketplace** | La implementación local del contrato de MercadoLibre (OAuth 2.0, catálogo, stock, webhooks, límites y errores) contra la que se desarrolla y se demuestra el sistema. Está detrás de la misma interfaz que la implementación real |
+
+## 12. Fuentes de datos y viabilidad
+
+Profundiza el análisis de la propuesta presentada a la cátedra. El objetivo es mostrar que los datos disponibles alcanzan para el alcance comprometido y que el proyecto es realizable con los recursos de la cursada.
+
+### 12.1 Fuentes
+
+El sistema consume datos de dos lugares, y solo de dos. Los generadores de catálogo y de feeds (RF-36, RF-37) no figuran acá: no aportan datos del mundo, son componentes del sistema que producen datos para ejercitarlo.
+
+| Fuente | Rol | Volumen | Frecuencia | Acceso y licencia | Estado de verificación |
+|---|---|---|---|---|---|
+| **Feed de stock de Celesa** | La única fuente real del lado proveedor. Alimenta la ingesta y, más adelante, el entrenamiento del modelo | ~255.000 SKU, ~4 MB por corrida | Cada 30 minutos | Endpoint HTTP con credenciales de la empresa, disponibles para el equipo, que además autorizó a archivar copias históricas | **Medido** sobre un snapshot real (§12.2) |
+| **API de MercadoLibre** | El contrato que implementan las dos caras de la interfaz de marketplace (RF-38) | Miles de publicaciones por tienda | Bajo demanda | Aplicación gratuita en el portal de desarrolladores; OAuth 2.0. La plataforma se reserva fijar límites y revocar credenciales | **Verificado por documentación**, no por uso productivo: el desarrollo va contra el simulador (ADR-0001) |
+
+Las otras fuentes que la empresa tiene relevadas —Ingram con ~10 millones de SKU, SBS con ~1 millón, bodegas propias con ~50 mil— **no se ingieren en este proyecto**. Sirven para fijar el orden de magnitud al que el diseño tiene que poder crecer (RNF-13) y para justificar por qué la propagación es por deltas y no por reescritura.
+
+### 12.2 El feed de Celesa, medido
+
+Las cifras que siguen **no son las declaradas por la empresa: están medidas**. Salen de analizar un `.csv` descargado del feed real de Celesa en producción, con [`scripts/analizar_feed.py`](../../scripts/analizar_feed.py), que es la misma herramienta con la que se van a caracterizar las corridas durante el POC:
+
+```
+python scripts/analizar_feed.py <snapshot.csv>
+```
+
+El snapshot es dato de un tercero y **no se versiona** (`*.csv` está en `.gitignore`); el script sí, de modo que cualquiera con acceso al feed puede reproducir estos números. Pasándole **dos** snapshots consecutivos calcula además `D`, `Z` y el coeficiente de CU-07, que es lo que hace falta para observar cómo se comporta el coeficiente sobre corridas reales y para verificar S-07. Las tolerancias no se ajustan con eso: siguen fijas (CU-07).
+
+| Propiedad | Valor medido |
+|---|---|
+| Filas / SKU distintos | 255.289 / **255.129** |
+| Tamaño | 3,94 MB (16,2 bytes por línea) |
+| Encoding y fin de línea | UTF-8 sin BOM, LF |
+| Formato | `SKU;stock`, separador `;`, **sin encabezado**, SKU en posición 0 y stock en posición 1 |
+| Filas con error de parseo | **0** (0,0000 %), contra el umbral de alerta de 10 % de RF-44 |
+| Stock en blanco | 0 |
+| SKU duplicados | 42 |
+| Rango de stock | **1 a 50**; ningún SKU con stock 0 |
+| Mediana / p90 / p99 del stock | 3 / 19 / 50 |
+
+Cuatro observaciones que el dato deja y que conviene tener presentes al implementar:
+
+- **El feed lista solamente lo disponible.** Ningún SKU viene con stock 0: los que se agotan desaparecen del archivo. Es exactamente el caso que RF-22 contempla al hacer que un SKU ausente valga cero, y por eso esa regla no es una decisión teórica sino la semántica real de la fuente.
+- **El stock está topeado en 50.** 8.700 SKU (3,41 %) tienen exactamente ese valor y ninguno lo supera, así que la distribución está truncada por el proveedor. El sistema propaga lo que la fuente informa, sin intentar corregirlo (S-03).
+- **Hay ISBN alfanuméricos** —por ejemplo `9782444846X31`—, pocos pero existen. El SKU se trata siempre como cadena; castearlo a entero perdería filas válidas.
+- **La regla de parseo de RF-21 existe por robustez, no porque esta fuente la ejercite.** En este snapshot no hay una sola fila con stock no numérico. El umbral de alerta de RF-44 sigue teniendo sentido para las otras fuentes y para una corrida que llegue dañada, pero no hay que presentarlo como algo que Celesa dispare de rutina.
+
+**Lo que esta medición todavía no cubre.** Con un único snapshot no se pueden calcular `D` ni `Z`, que se definen entre corridas consecutivas, ni verificar S-07 (que el volumen de deltas es una fracción chica del total de vínculos). Las dos cosas se miden en el POC, sobre corridas archivadas. La recolección arranca de inmediato: la empresa ya autorizó a guardar el histórico.
+
+### 12.3 Límite de consumo de la API
+
+El sistema dispone de **60 requests por minuto y por tienda** para actualizar stock, o sea 3.600 escrituras por hora. Es un dato del dominio, no una decisión de este proyecto: se toma como dado (S-08) y no se lo discute acá. De él se derivan los objetivos de RNF-01, el umbral de 12 horas de CU-08 y todo el dimensionamiento de §4.
+
+Verificarlo empíricamente exigiría consumir la API productiva de MercadoLibre, que es justamente lo que el proyecto evita (ADR-0001). El simulador aplica el mismo límite y responde 429 al superarlo (RF-35), de modo que el motor se ejercita contra la restricción aunque no se la mida contra la plataforma.
+
+La aritmética que importa: escribir los 255.129 SKU del feed de una sola vez costaría **casi 71 horas** de cuota de una tienda. Ni siquiera el orden de 10⁵ vínculos de RNF-13 entra: serían unas 28 horas, más del doble del techo de 12 que dispara el estado *atrasada*. Propagar por deltas no es una optimización, es la única forma de que los objetivos de latencia sean alcanzables (ADR-0002).
+
+### 12.4 Cuellos de datos conocidos
+
+- **Reemplazar el estado vigente completo es caro.** RF-22 define que cada corrida aceptada reemplaza el estado vigente del proveedor, y son ~255.000 filas cada 30 minutos: 12,2 millones de filas reescritas por día y por proveedor si se toma la definición al pie de la letra. La implementación debe hacerlo con un **UPSERT** —insertar los SKU nuevos, actualizar los que vinieron y llevar a cero los que no aparecieron—, que preserva exactamente la semántica de RF-22 pero hace el costo de escritura proporcional al cambio y no al catálogo. Es la misma idea de RNF-14 aplicada a la base propia. El SRD lo especifica.
+- **El histórico de snapshots crece rápido, pero comprime muy bien.** A 48 corridas por día son ~189 MB diarios sin comprimir (5,5 GB al mes). El feed es texto muy repetitivo y comprime a **25,8 %** de su tamaño con gzip, así que archivarlo comprimido lo deja en ~49 MB por día y ~1,4 GB al mes, que es manejable con la restricción de costos. Hace falta además política de retención y deduplicar por hash las corridas que no cambiaron.
+- **El histórico para el modelo no existe todavía.** El componente de ML (§10) necesita corridas reales archivadas y el sistema recién las va a guardar cuando esté corriendo. Es la única necesidad de datos de este proyecto que hoy no está cubierta, y por eso la recolección arranca antes que el código que la consumirá.
+
+### 12.5 Viabilidad para un equipo de 2–3 personas
+
+El PRD asigna **29 requisitos funcionales al POC** —todos *Must*— y **23 al MVP** (12 *Must*, 10 *Should*, 1 *Could*), más 19 requisitos no funcionales. Los componentes a construir son API core, frontend, worker de ingesta, comparador, worker de publicación, worker de catálogo, simulador, dos generadores y el pipeline de ML.
+
+Es un alcance exigente, y el roadmap (§9) es lo que lo hace manejable: fija el orden de construcción, qué se mockea en el POC y qué se recorta primero si el tiempo no alcanza.
+
+Lo que lo vuelve abordable es que la complejidad está concentrada en la ingeniería —heterogeneidad de fuentes, idempotencia, cuota, observabilidad— y no en la cantidad de funcionalidad: el ciclo es corto y se repite (leer feed, calcular delta, escribir, auditar). Además el problema viene de una empresa real que ya tiene el dominio relevado y comparte el feed con sus credenciales, lo que elimina la etapa de relevamiento, y todo lo que no se puede tener de forma real —el marketplace— se simula detrás de una interfaz única.
+
+El riesgo dominante sigue siendo el motor de sincronización contra la API (R-01), y es lo primero que el POC resuelve. El secundario es la calidad de los feeds (R-02), mitigado por validación y cuarentena.
+
+### 12.6 Supuestos fuertes y plan B
+
+| Supuesto | Por qué es fuerte | Cómo se verifica | Plan B |
+|---|---|---|---|
+| **S-05** — sigue disponible el acceso al feed de Celesa | Es el único dato real del lado proveedor | Corridas archivadas desde ya | Trabajar con el histórico archivado y con el generador de feeds (RF-37) |
+| **S-08** — 60 req/min por tienda | De ahí salen RNF-01 y el umbral de 12 horas | No se verifica contra la plataforma: el simulador lo aplica y lo hace configurable | Si el caudal real difiere, los objetivos se recalculan con la aritmética de §4 y la prioridad decide qué se actualiza primero |
+| **S-06** — el simulador es representativo | Todo el lado marketplace es sintético | Contract tests capaces de correr contra ambas implementaciones | Interfaz de marketplace única con implementación real intercambiable (RF-38) |
+| **S-02** — el SKU es clave de cruce confiable | Todo el matching depende de él | Medido sobre el feed real: ISBN de 13 caracteres, con duplicados y algún alfanumérico | Tratar el SKU como cadena, normalizar y permitir búsqueda y vínculo manual (RF-17) |
+| **S-07** — los deltas son una fracción chica de los vínculos | Si se rompe, el sistema pasa de propagar cambios a reescribir catálogos y RNF-01 deja de ser alcanzable | Pendiente: exige comparar corridas consecutivas, en el POC | Prioridad por proveedor y envejecimiento (RF-23) para decidir qué se actualiza primero |
