@@ -19,4 +19,4 @@ Ivo Stock sincroniza inventario entre N fuentes de stock y K tiendas de MercadoL
 - ADRs: decisiones estructurales del proyecto, con alternativas consideradas y trade-offs.
 - Validación de proyecto: propuesta enviada a la cátedra, pendiente de respuesta.
 
-Video: https://drive.google.com/file/d/1UCATIdHMsAG8JzFwITUkQmY4OooB77_3/view?usp=sharing
+Video: https://www.youtube.com/watch?v=zP0HYAmsSoY
