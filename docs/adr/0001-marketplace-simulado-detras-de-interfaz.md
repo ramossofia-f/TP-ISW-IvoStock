@@ -36,6 +36,8 @@ Chosen option: "Opción 4 — simulador propio detrás de una interfaz única", 
 
 Los workers escriben **siempre** contra la interfaz de marketplace (RF-38). El simulador reproduce el contrato real: OAuth 2.0 completo (authorization code, refresh, revocación), catálogo, escritura de stock, webhooks, límite de consumo de 60 req/min por tienda **con respuesta 429 al superarlo**, la **semántica de stock 0** (escribir `available_quantity = 0` pausa la publicación con subestado `out_of_stock`, y escribir un valor mayor a 0 la reactiva) y errores reintentables y no reintentables. El catálogo sintético toma sus SKU del feed real de Celesa (RF-35, RF-36), de modo que el matching se ejercite contra datos verdaderos de un lado.
 
+La respuesta 429 se conserva como escenario técnico verificable. El motor la gestiona internamente con espera y reintento, sin alertar al usuario ni mostrar cada intento en la interfaz, y conserva el trabajo pendiente (RF-24). Las caídas del marketplace se distinguen de la disponibilidad propia de RNF-19. Para medir esta última, el simulador permanece disponible durante la prueba de 24 horas definida en PRD §4.
+
 ### Consequences
 
 * Good, porque el sistema se levanta y se corrige entero en local, con `docker-compose`, sin credenciales de nadie.

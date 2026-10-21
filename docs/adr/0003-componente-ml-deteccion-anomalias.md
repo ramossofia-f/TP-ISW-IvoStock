@@ -12,7 +12,7 @@ informed:
 
 La Entrega 3 exige un pipeline de ML reproducible, con entrenamiento, serving y monitoreo. El documento de validación dejó dos candidatos abiertos y hay que elegir uno antes de cerrar la Entrega 1.
 
-El alcance del proyecto restringe mucho el espacio de opciones. El sistema no gestiona ventas, así que no tiene la señal que haría obvio cualquier modelo de demanda: los únicos datos propios son el histórico de snapshots crudos del feed y la auditoría de escrituras al marketplace. Además, el catálogo del lado tienda es sintético, de modo que todo lo que dependa de atributos reales de publicaciones queda sin datos verdaderos sobre los que entrenar.
+El alcance del proyecto restringe mucho el espacio de opciones. El sistema no gestiona ventas, así que no tiene la señal que haría obvio cualquier modelo de demanda: dispone del histórico de snapshots crudos del feed, las señales y decisiones de las corridas y la configuración de vínculos pertinente al cálculo. Además, el catálogo del lado tienda es sintético, de modo que todo lo que dependa de atributos reales de publicaciones queda sin datos verdaderos sobre los que entrenar. El recorte del historial completo de escrituras acordado en la revisión posterior a la Entrega 1 no cambia esta decisión: el modelo no usa ese historial como fuente de entrenamiento.
 
 Hay un antecedente que condiciona la decisión: el PRD ya define en CU-07 un **coeficiente de sospecha** con **tolerancias fijas** que decide si una corrida entra en cuarentena. Ese coeficiente no es un placeholder a la espera de un modelo. El modelo **no lo reemplaza ni recalibra sus tolerancias**: el coeficiente queda como baseline contra el cual medir y como **fallback permanente**, y sigue decidiendo por defecto mientras no exista un modelo entrenado y válido.
 
@@ -51,7 +51,7 @@ Las etiquetas positivas son sintéticas y se declaran como tales. Para que eso n
 
 ### Consequences
 
-* Good, porque no hace falta ninguna fuente de datos nueva: el histórico de snapshots y la auditoría ya son requisitos del sistema por otras razones (RF-20, RF-30).
+* Good, porque no hace falta ninguna fuente de datos nueva: RF-20 ya conserva los snapshots crudos e inmutables para reproducir la ingesta y revisar cuarentenas. Las señales del modelo se calculan sobre esos snapshots y la configuración de vínculos pertinente a cada corrida; no necesitan un historial de escrituras al marketplace. El dataset versionado de RF-51 conserva las señales utilizadas para reproducir el entrenamiento.
 * Good, porque existe un baseline explícito contra el cual medir. Sin él, cualquier número del modelo sería incomparable y la evaluación, decorativa.
 * Good, porque la inferencia es trivial —un puntaje por corrida, no por SKU—, así que el serving y el monitoreo son abordables para el equipo y no comprometen RNF-02.
 * Good, porque el sistema no queda atado al modelo: si no está entrenado, no está disponible o es inválido, decide el baseline y la ingesta no se detiene (RF-50).
