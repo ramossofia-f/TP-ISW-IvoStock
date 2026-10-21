@@ -16,7 +16,7 @@ Este roadmap define el orden de construcción hacia el POC y el MVP.
 
 El riesgo más grande es el motor de sincronización contra la API: cuota, idempotencia y ciclo de vida de los tokens (R-01).
 
-El POC lo resuelve sobre una ruta completa y angosta: **el proveedor real Celesa y una tienda simulada que implementa el contrato real de MercadoLibre**, con stock propagándose de punta a punta y auditado.
+El POC lo resuelve sobre una ruta completa y angosta: **el proveedor real Celesa y una tienda simulada que implementa el contrato real de MercadoLibre**, con stock propagándose de punta a punta y estado operativo persistido por vínculo.
 
 ## P0: Fundaciones
 
@@ -116,7 +116,7 @@ P0.
 * Reparto por tienda de 40 req/min para sincronización habitual y 20 para operaciones masivas, con préstamo del cupo ocioso hasta 60 en total.
 * Reintentos con backoff.
 * Idempotencia.
-* Auditoría.
+* Estado operativo por vínculo y registros técnicos correlacionados por corrida y tarea.
 * Conservación y recuperación de tareas pendientes y en curso, incluidas las órdenes de stock cero.
 * Recuperación automática ante cierres abruptos.
 
@@ -142,7 +142,7 @@ P1 y P2.
 
 * Se prueba la propiedad `cola pendiente ≤ vínculos activos`.
 * Reejecutar una corrida produce cero escrituras adicionales.
-* La auditoría puede consultarse por publicación.
+* Se puede consultar el último stock deseado, el último confirmado, la fecha del último éxito y el estado pendiente o en falla de cada vínculo (RF-30). Un intento fallido conserva el último confirmado; actualizar el estado no elimina una falla pendiente ni su contexto. Los registros de trabajo permiten identificar los estados de las tareas y verificar RNF-03 y RNF-06.
 * La campaña reproducible de RNF-06 ejecuta 10 cierres abruptos y recupera el 100 % del trabajo vigente, incluidas tareas en curso y órdenes de stock cero, sin duplicar efectos. Cubre también la caída del servicio de cola y los puntos de interrupción definidos en PRD §4.
 * Después de cada cierre de un proceso del motor, el procesamiento se reanuda automáticamente en hasta 10 minutos desde la caída, con sus almacenes disponibles (RNF-19).
 * Un 429 recibido de MercadoLibre conserva la actualización pendiente y se reintenta internamente; no genera una alerta al usuario, una dead letter ni un fallo persistente de publicación (RF-24).
@@ -218,7 +218,7 @@ El test de RNF-20 demuestra los dos sentidos de la independencia: con la interfa
 
 P1 y P2 pueden avanzar en paralelo porque no se conectan hasta P3.
 
-Durante el POC se permite simplificar o mockear algunos componentes, siempre que quede declarado en el README. Se admite una interfaz mínima, el disparo manual de la ingesta en lugar de la programación por proveedor y dead letters registradas como fallo terminal en la auditoría. RF-27 completo se incorpora en M4 para garantizar que ningún delta quede sin estado terminal.
+Durante el POC se permite simplificar o mockear algunos componentes, siempre que quede declarado en el README. Se admite una interfaz mínima, el disparo manual de la ingesta en lugar de la programación por proveedor y dead letters registradas como fallo terminal persistido con su delta, respuesta y fecha de falla en el registro de trabajo. RF-27 completo se incorpora en M4 para garantizar que ningún delta quede sin estado terminal. La revisión de ese alcance y de la cuarentena desde el POC sigue pendiente en el punto 7 de la devolución; el recorte del historial completo no modifica sus garantías.
 
 # Entrega 3: MVP
 
@@ -407,7 +407,7 @@ M1.
 * Medición de RNF-21: 1.000 usuarios a una consulta por segundo cada uno durante 30 minutos, con p95 menor a 2 segundos y el motor activo, según PRD §4. La evidencia documenta bases y CPU separados y comprueba la coexistencia con RNF-01 y RNF-02 bajo el perfil de sincronización acordado.
 * Verificación de la cuota propia de RNF-22 y del tratamiento separado de 429 propios y de MercadoLibre.
 * Evidencia de las pruebas de conservación, recuperación e independencia de RNF-06, RNF-19 y RNF-20.
-* Verificación de los 7 criterios de éxito.
+* Verificación de los **6 criterios de éxito vigentes**; el criterio 7 y CU-09 fueron retirados al recortar el historial completo, según PRD §5.
 * SRD completo con Machine Learning.
 * ADRs.
 * Video.
