@@ -1,6 +1,6 @@
 # Roadmap
 
-**Entrega 1: Diseño**
+**Entrega 1 aprobada; revisión del diseño en curso**
 
 Este roadmap define el orden de construcción hacia el POC y el MVP.
 
@@ -10,6 +10,7 @@ Este roadmap define el orden de construcción hacia el POC y el MVP.
 2. **El simulador antes que el motor.** Sin él no hay forma de ejercitar los caminos de falla.
 3. **Un proveedor por una tienda antes de N por K.**
 4. **CI y tests desde el primer hito.** No se incorporan al final.
+5. **Continuidad sin pérdida de trabajo.** La interfaz con su API y el motor se ejecutan de forma independiente (RNF-20); las caídas se prueban con trabajo pendiente desde el POC (RNF-06). El objetivo de disponibilidad es 99 % en 24 horas para cada conjunto, con reanudación del motor en hasta 10 minutos (RNF-19).
 
 # Entrega 2: POC + SRD
 
@@ -22,7 +23,7 @@ El POC lo resuelve sobre una ruta completa y angosta: **el proveedor real Celesa
 **Qué se construye**
 
 * Repo privado compartido con la cátedra.
-* Estructura de servicios.
+* Estructura de servicios con ejecución, bases de datos y CPU independientes para la API de consulta y el motor; intercambio asíncrono y durable, sin llamadas directas. El mecanismo se justificará en un ADR posterior.
 * `docker-compose` base con PostgreSQL, Redis y almacenamiento de objetos.
 * CI con build, tests y chequeo de secretos.
 * Plantilla de ADR.
@@ -112,9 +113,12 @@ P0.
 * Cola con prioridad y envejecimiento.
 * Reemplazo por vínculo.
 * Worker de publicación con control de cuota.
+* Reparto por tienda de 40 req/min para sincronización habitual y 20 para operaciones masivas, con préstamo del cupo ocioso hasta 60 en total.
 * Reintentos con backoff.
 * Idempotencia.
 * Auditoría.
+* Conservación y recuperación de tareas pendientes y en curso, incluidas las órdenes de stock cero.
+* Recuperación automática ante cierres abruptos.
 
 **Requisitos**
 
@@ -128,6 +132,7 @@ P0.
 * RNF-04
 * RNF-06
 * RNF-06b
+* RNF-19 (reanudación del procesamiento)
 
 **Dependencias**
 
@@ -138,6 +143,10 @@ P1 y P2.
 * Se prueba la propiedad `cola pendiente ≤ vínculos activos`.
 * Reejecutar una corrida produce cero escrituras adicionales.
 * La auditoría puede consultarse por publicación.
+* La campaña reproducible de RNF-06 ejecuta 10 cierres abruptos y recupera el 100 % del trabajo vigente, incluidas tareas en curso y órdenes de stock cero, sin duplicar efectos. Cubre también la caída del servicio de cola y los puntos de interrupción definidos en PRD §4.
+* Después de cada cierre de un proceso del motor, el procesamiento se reanuda automáticamente en hasta 10 minutos desde la caída, con sus almacenes disponibles (RNF-19).
+* Un 429 recibido de MercadoLibre conserva la actualización pendiente y se reintenta internamente; no genera una alerta al usuario, una dead letter ni un fallo persistente de publicación (RF-24).
+* Con ambas clases pendientes se verifica 40/20; con una sola, el préstamo del cupo libre hasta 60; al reactivar la otra se restablece el reparto sin exceder el límite total.
 
 ## P4: Tiendas y vínculos
 
@@ -150,6 +159,8 @@ P1 y P2.
 * Sugerencia y aprobación de vínculos.
 * ON/OFF con la regla de corte.
 * Comparación inicial al vincular.
+* Cuota de la API detrás de la interfaz: 60 solicitudes por minuto por usuario, con rechazo 429 explícito al excederla.
+* Cuota diaria por usuario de Ivo Stock: un alta o baja de proveedor o tienda y un lote de vinculación, con contadores compartidos entre sesiones y reintentos de la misma operación sin consumo duplicado.
 
 **Requisitos**
 
@@ -165,6 +176,8 @@ P1 y P2.
 * RF-43
 * RF-47
 * RNF-08
+* RNF-22
+* RF-55
 
 **Dependencias**
 
@@ -175,13 +188,15 @@ P1 y P3.
 * El flujo OAuth completo funciona contra el simulador.
 * INV-1 está cubierta por un test.
 * Apagar un vínculo deja la publicación en stock cero.
+* Los tests de RNF-22 verifican límite entre sesiones, `Retry-After`, conservación de la pantalla y mensaje «Demasiadas solicitudes; reintentá en X segundos», sin generar trabajo por la petición rechazada.
+* Los tests de RF-55 verifican ambas cuotas diarias con reloj controlado, renovación de día, identidad de los reintentos y rechazo sin efectos al agotarse el cupo.
 
 ## P5: Cierre del POC
 
 **Qué se construye**
 
 * Flujo punta a punta desde Celesa real hasta una tienda simulada.
-* Interfaz mínima.
+* Interfaz mínima con su API, ejecutable de forma independiente del motor.
 * README.
 * ADRs.
 * SRD sin Machine Learning.
@@ -189,7 +204,7 @@ P1 y P3.
 
 **Requisitos**
 
-Entrega 2.
+Entrega 2 y RNF-20.
 
 **Dependencias**
 
@@ -198,6 +213,8 @@ P2, P3 y P4.
 **Criterio de salida verificable**
 
 `make demo` reproduce el flujo completo, incluidos los escenarios de respuesta 429 y token revocado.
+
+El test de RNF-20 demuestra los dos sentidos de la independencia: con la interfaz y su API detenidas, un cambio de una fuente ya configurada llega a la tienda; con el motor detenido, la interfaz consulta su copia del estado y acepta una solicitud pendiente que se recupera al reanudarlo. Se documentan bases y CPU separados y se verifica que la consulta no necesite la base del motor.
 
 P1 y P2 pueden avanzar en paralelo porque no se conectan hasta P3.
 
@@ -268,7 +285,7 @@ P5.
 
 **Criterio de salida verificable**
 
-Un test demuestra que una lectura de catálogo disparada manualmente cede ante las escrituras de stock pendientes.
+Un test demuestra que lectura de catálogo y escritura de stock comparten el límite de 60 req/min por tienda, se imputan a su clase y respetan 40/20 cuando ambas tienen trabajo pendiente. También verifica préstamo del cupo ocioso y retorno al reparto sin desplazar el presupuesto reservado a sincronización habitual.
 
 ## M4: Gobernanza y degradación
 
@@ -385,6 +402,10 @@ M1.
 
 * Medición de RNF-01.
 * Medición de RNF-14.
+* Medición de RNF-19: prueba continua de 24 horas, con al menos 99 % de disponibilidad por separado para la interfaz con su API y para el motor, según las sondas externas de PRD §4.
+* Medición de RNF-21: 1.000 usuarios a una consulta por segundo cada uno durante 30 minutos, con p95 menor a 2 segundos y el motor activo, según PRD §4. La evidencia documenta bases y CPU separados y comprueba la coexistencia con RNF-01 y RNF-02 bajo el perfil de sincronización acordado.
+* Verificación de la cuota propia de RNF-22 y del tratamiento separado de 429 propios y de MercadoLibre.
+* Evidencia de las pruebas de conservación, recuperación e independencia de RNF-06, RNF-19 y RNF-20.
 * Verificación de los 7 criterios de éxito.
 * SRD completo con Machine Learning.
 * ADRs.
@@ -400,7 +421,7 @@ Todos los hitos anteriores.
 
 **Criterio de salida verificable**
 
-Se completa una tabla que relaciona cada criterio con su evidencia de forma completa y reproducible.
+Se completa una tabla que relaciona cada criterio con su evidencia de forma completa y reproducible. Se adjunta el registro de sondas de RNF-19, separado de las fallas de proveedores y marketplace. Las caídas de componentes y almacenes propios dentro de la ventana cuentan como indisponibilidad.
 
 RNF-13, correspondiente a escalabilidad conocida, se argumenta en el SRD de cada entrega y no tiene un hito propio.
 

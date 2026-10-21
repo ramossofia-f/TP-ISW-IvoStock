@@ -12,14 +12,16 @@ informed:
 
 La fuente real (Celesa) entrega **inventario completo, no incrementos**: cada 30 minutos publica un archivo con ~255.000 pares `SKU;stock`, sin marca de "qué cambió desde la última vez". Del otro lado, el sistema mantiene del orden de 10⁵ vínculos publicación–SKU repartidos en K tiendas.
 
-La pregunta es qué escribe el sistema en cada corrida. La cota que decide es dura y ajena al diseño propio: la API de MercadoLibre admite **60 req/min por tienda** (S-08), o sea 3.600 escrituras por hora y por tienda, y ese presupuesto es **compartido** entre escribir stock y leer catálogo (RF-48). Reescribir el catálogo completo de una tienda con 10⁵ publicaciones cuesta ~28 horas de cuota a caudal pleno, para una fuente que se actualiza 48 veces por día. Con ese esquema RNF-01 (p95 bajo 6 horas, p100 bajo 12) es inalcanzable por aritmética, no por implementación.
+La pregunta es qué escribe el sistema en cada corrida. La cota que decide es dura y ajena al diseño propio: la API de MercadoLibre admite **60 req/min por tienda** (S-08), o sea 3.600 escrituras por hora y por tienda, y ese presupuesto es **compartido** entre escribir stock y leer catálogo (RF-48). Reescribir el catálogo completo de una tienda con 10⁵ publicaciones cuesta ~28 horas de cuota a caudal pleno, para una fuente que se actualiza 48 veces por día. Con ese esquema RNF-01 (p95 bajo 6 horas, p99 bajo 12) es inalcanzable por aritmética, no por implementación.
 
 Como la fuente no informa el cambio, **el delta lo tiene que derivar el sistema**, y hay que decidir contra qué lo compara.
+
+La revisión posterior a la Entrega 1 fija un reparto interno de **40 req/min para sincronización habitual y 20 para operaciones masivas**, contando lecturas y escrituras. Una clase puede tomar el cupo que la otra deja ocioso hasta el total de 60; cuando ambas tienen trabajo se restablece el reparto (PRD §2.3, RF-24, RF-48). Con ambas pendientes, el presupuesto habitual es de 2.400 llamadas/hora, antes de descontar lecturas y reintentos. Este reparto no modifica la decisión de comparar contra el estado vigente y tampoco demuestra por sí solo RNF-01: su perfil de carga sigue pendiente de acordar.
 
 ## Decision Drivers
 
 * Cota dura de 60 req/min por tienda, compartida entre escritura y lectura (S-08, RF-48). Ninguna decisión de infraestructura propia la mueve.
-* RNF-01: p95 en menos de 6 horas, p100 en menos de 12, sobre el 100 % de los vínculos activos.
+* RNF-01: p95 en menos de 6 horas, p99 en menos de 12, sobre el 100 % de los vínculos activos.
 * RNF-14: el trabajo contra la API debe ser proporcional a los **cambios**, no al catálogo; una corrida sin cambios produce **cero escrituras**.
 * RNF-02: una corrida de 255.000 SKU procesada en menos de 10 minutos.
 * RNF-03 y RNF-06: ningún cambio se pierde en silencio, ni siquiera ante caída del worker o del broker.
@@ -41,8 +43,8 @@ La decisión fija el pipeline en dos procesos separados y acoplados solo por el 
 
 ### Consequences
 
-* Good, porque el consumo de la API pasa a ser proporcional a los cambios reales: una corrida sin cambios no gasta una sola llamada (RNF-14), y con eso RNF-01 pasa a ser alcanzable.
-* Good, porque el delta es **reconstruible** en cualquier momento como `estado vigente − último valor confirmado`. Eso da la red de seguridad de RNF-06 (una tarea perdida se vuelve a derivar) y convierte la durabilidad de la cola en un problema de disponibilidad, no de pérdida de datos — matiz que se decide en su propio ADR.
+* Good, porque el consumo de la API pasa a ser proporcional a los cambios reales: una corrida sin cambios no gasta una sola llamada (RNF-14). Eso hace posible cumplir RNF-01 si el perfil de deltas cabe en el caudal disponible; el perfil de carga sigue pendiente de acordar.
+* Good, porque las diferencias de inventario son **reconstruibles** como `estado vigente − último valor confirmado`. Eso da una red de seguridad para RNF-06. Las órdenes de stock cero de RF-47 requieren conservar además la intención de corte: no se reconstruyen solo desde el stock del proveedor. La elección de cola debe demostrar conservación de todo el trabajo vigente; la reconstrucción de inventario por sí sola no resuelve esa obligación.
 * Good, porque una escritura fallida se reintenta sola en la corrida siguiente: la diferencia contra el valor confirmado sigue ahí hasta que se aplique.
 * Good, porque al crear un vínculo se compara el stock del proveedor contra el que MercadoLibre reporta para esa publicación y se encolan **solo las diferencias**, en lugar de escribir el catálogo entero de arranque.
 * Good, porque el reemplazo por vínculo de RF-46 acota la cola pendiente de una tienda a su cantidad de vínculos activos, sin importar cuántas corridas se acumulen.
@@ -55,7 +57,7 @@ La decisión fija el pipeline en dos procesos separados y acoplados solo por el 
 
 * Test de RNF-14: una corrida idéntica a la anterior produce **cero** llamadas a la API. Se mide llamadas por corrida contra cantidad de deltas, y la métrica queda expuesta en el tablero de salud.
 * Test de RNF-02: corrida de 255.000 SKU (feed real de Celesa) procesada en menos de 10 minutos.
-* Test de recuperación: matar el worker con tareas pendientes y verificar que la cola se reconstruye desde el estado vigente sin perder ningún delta (RNF-03, RNF-06).
+* Campaña de recuperación de RNF-06: 10 cierres abruptos reproducibles con tareas pendientes y en curso, incluida la caída del servicio de cola, una escritura aceptada antes de guardar su confirmación y una orden de stock cero. Después de cada recuperación se conserva el 100 % del trabajo vigente y, al drenar la cola, el estado del simulador coincide con el esperado, sin duplicar efectos. La reanudación tras cada cierre de un proceso del motor ocurre en hasta 10 minutos (RNF-19). Protocolo completo en PRD §4.
 * Test del camino de la opción B que se quiso evitar: una escritura que termina en dead letter debe volver a encolarse en la corrida siguiente aunque el feed no haya cambiado.
 
 ## Pros and Cons of the Options
@@ -93,7 +95,7 @@ La decisión fija el pipeline en dos procesos separados y acoplados solo por el 
 
 ## More Information
 
-* Relacionado con PRD §3 (RF-20 a RF-23, RF-45, RF-46, RF-48), §4 (RNF-01, RNF-02, RNF-03, RNF-06, RNF-14), S-07, S-08, R-01.
+* Relacionado con PRD §3 (RF-20 a RF-23, RF-45 a RF-48), §4 (RNF-01, RNF-02, RNF-03, RNF-06, RNF-14, RNF-19), S-07, S-08, R-01.
 * Esta decisión **no** resuelve dónde vive la cola de deltas: que la cola sea reconstruible es un insumo de ese ADR (cola en Redis reconstruible vs. cola durable en PostgreSQL), no su conclusión.
 * Tampoco fija el algoritmo de comparación (diff completo en memoria vs. comparación incremental en base); eso se decide con datos de RNF-02 durante el POC.
 * La opción A sobrevive como **reconciliación periódica** de baja prioridad, si el desfase por escrituras externas resulta medible. No es la vía de propagación.
