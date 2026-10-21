@@ -222,7 +222,7 @@ Durante el POC se permite simplificar o mockear algunos componentes, siempre que
 
 # Entrega 3: MVP
 
-El objetivo del MVP es generalizar y operar la solución: N proveedores por K tiendas, el segundo formato de origen, catálogo vivo, gobernanza de corridas, observabilidad verificable y el componente de Machine Learning.
+El objetivo del MVP es generalizar y operar la solución: N proveedores por K tiendas, el segundo formato de origen, catálogo vivo, gobernanza de corridas, observabilidad verificable y el componente de Machine Learning. La demostración comprometida fija **K = 2 tiendas simuladas** y una prueba de capacidad de **100.000 vínculos activos totales, 50.000 por tienda**. El perfil de deltas por corrida sigue pendiente de acordar y se documentará antes de medir RNF-01 y RNF-13.
 
 ## M1: N × K
 
@@ -245,7 +245,7 @@ P5.
 
 **Criterio de salida verificable**
 
-Se puede pasar de una tienda a K tiendas sobre el mismo feed sin modificar código, correspondiente al criterio de éxito 2.
+Se puede pasar de **1 a 2 tiendas simuladas sobre el mismo feed sin modificar código**, correspondiente al criterio de éxito 2. La segunda tienda reutiliza el estado vigente del proveedor sin duplicar su ingesta; se verifica lectura de catálogo, sugerencia de vínculos y comienzo de la sincronización. La prueba de capacidad de 100.000 vínculos totales se completa en M8 (RNF-13); agregar más tiendas exige nuevas mediciones.
 
 ## M2: Segundo formato
 
@@ -402,6 +402,7 @@ M1.
 
 * Medición de RNF-01.
 * Medición de RNF-14.
+* Medición de RNF-13 con **100.000 vínculos activos totales en 2 tiendas simuladas, 50.000 por tienda**, registrando el perfil de carga acordado y los recursos de ejecución.
 * Medición de RNF-19: prueba continua de 24 horas, con al menos 99 % de disponibilidad por separado para la interfaz con su API y para el motor, según las sondas externas de PRD §4.
 * Medición de RNF-21: 1.000 usuarios a una consulta por segundo cada uno durante 30 minutos, con p95 menor a 2 segundos y el motor activo, según PRD §4. La evidencia documenta bases y CPU separados y comprueba la coexistencia con RNF-01 y RNF-02 bajo el perfil de sincronización acordado.
 * Verificación de la cuota propia de RNF-22 y del tratamiento separado de 429 propios y de MercadoLibre.
@@ -423,7 +424,7 @@ Todos los hitos anteriores.
 
 Se completa una tabla que relaciona cada criterio con su evidencia de forma completa y reproducible. Se adjunta el registro de sondas de RNF-19, separado de las fallas de proveedores y marketplace. Las caídas de componentes y almacenes propios dentro de la ventana cuentan como indisponibilidad.
 
-RNF-13, correspondiente a escalabilidad conocida, se argumenta en el SRD de cada entrega y no tiene un hito propio.
+RNF-13 se documenta en el SRD de cada entrega y su prueba de capacidad se completa en M8. El POC conserva una ruta reducida de un proveedor y una tienda; no se le exige demostrar todavía el volumen completo del MVP. La evidencia de M8 distingue cantidad de vínculos y deltas por corrida, y no extrapola capacidad a más tiendas sin mediciones.
 
 # Control, plan B y orden de recorte
 

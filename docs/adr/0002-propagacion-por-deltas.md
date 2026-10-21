@@ -10,9 +10,9 @@ informed:
 
 ## Context and Problem Statement
 
-La fuente real (Celesa) entrega **inventario completo, no incrementos**: cada 30 minutos publica un archivo con ~255.000 pares `SKU;stock`, sin marca de "qué cambió desde la última vez". Del otro lado, el sistema mantiene del orden de 10⁵ vínculos publicación–SKU repartidos en K tiendas.
+La fuente real (Celesa) entrega **inventario completo, no incrementos**: cada 30 minutos publica un archivo con ~255.000 pares `SKU;stock`, sin marca de "qué cambió desde la última vez". Del otro lado, la demostración del MVP mantiene **100.000 vínculos publicación–SKU totales repartidos en 2 tiendas simuladas, 50.000 por tienda** (RNF-13; alcance precisado en la revisión posterior a la Entrega 1).
 
-La pregunta es qué escribe el sistema en cada corrida. La cota que decide es dura y ajena al diseño propio: la API de MercadoLibre admite **60 req/min por tienda** (S-08), o sea 3.600 escrituras por hora y por tienda, y ese presupuesto es **compartido** entre escribir stock y leer catálogo (RF-48). Reescribir el catálogo completo de una tienda con 10⁵ publicaciones cuesta ~28 horas de cuota a caudal pleno, para una fuente que se actualiza 48 veces por día. Con ese esquema RNF-01 (p95 bajo 6 horas, p99 bajo 12) es inalcanzable por aritmética, no por implementación.
+La pregunta es qué escribe el sistema en cada corrida. La cota que decide es dura y ajena al diseño propio: la API de MercadoLibre admite **60 req/min por tienda** (S-08), o sea 3.600 escrituras por hora y por tienda, y ese presupuesto es **compartido** entre escribir stock y leer catálogo (RF-48). Reescribir los **50.000 vínculos de cada tienda** cuesta **unas 13 horas y 53 minutos por tienda** a caudal pleno, aun procesando ambas en paralelo y sin lecturas ni reintentos, para una fuente que se actualiza 48 veces por día. Con ese esquema RNF-01 (p95 bajo 6 horas, p99 bajo 12) es inalcanzable por aritmética, no por implementación.
 
 Como la fuente no informa el cambio, **el delta lo tiene que derivar el sistema**, y hay que decidir contra qué lo compara.
 
@@ -43,7 +43,7 @@ La decisión fija el pipeline en dos procesos separados y acoplados solo por el 
 
 ### Consequences
 
-* Good, porque el consumo de la API pasa a ser proporcional a los cambios reales: una corrida sin cambios no gasta una sola llamada (RNF-14). Eso hace posible cumplir RNF-01 si el perfil de deltas cabe en el caudal disponible; el perfil de carga sigue pendiente de acordar.
+* Good, porque el consumo de la API pasa a ser proporcional a los cambios reales: una corrida sin cambios no gasta una sola llamada (RNF-14). Eso hace posible cumplir RNF-01 si el perfil de deltas cabe en el caudal disponible; la prueba con 100.000 vínculos totales no fija por sí sola ese perfil, que sigue pendiente de acordar.
 * Good, porque las diferencias de inventario son **reconstruibles** como `estado vigente − último valor confirmado`. Eso da una red de seguridad para RNF-06. Las órdenes de stock cero de RF-47 requieren conservar además la intención de corte: no se reconstruyen solo desde el stock del proveedor. La elección de cola debe demostrar conservación de todo el trabajo vigente; la reconstrucción de inventario por sí sola no resuelve esa obligación.
 * Good, porque una escritura fallida se reintenta sola en la corrida siguiente: la diferencia contra el valor confirmado sigue ahí hasta que se aplique.
 * Good, porque al crear un vínculo se compara el stock del proveedor contra el que MercadoLibre reporta para esa publicación y se encolan **solo las diferencias**, en lugar de escribir el catálogo entero de arranque.
@@ -66,7 +66,7 @@ La decisión fija el pipeline en dos procesos separados y acoplados solo por el 
 
 * Good, porque es trivial de implementar y de razonar: no hay estado derivado que mantener ni que pueda desincronizarse.
 * Good, porque es autocorrectiva por construcción: cualquier desvío se corrige en la corrida siguiente.
-* Bad, porque no entra en el presupuesto de la API: 10⁵ publicaciones a 3.600 escrituras por hora son ~28 horas por tienda, contra una fuente que se actualiza cada 30 minutos.
+* Bad, porque no entra en el presupuesto de la API: 50.000 publicaciones a 3.600 escrituras por hora son unas 13 horas y 53 minutos por tienda, contra una fuente que se actualiza cada 30 minutos. Procesar dos tiendas en paralelo no reduce el tiempo mínimo de cada una.
 * Bad, porque hace el trabajo proporcional al catálogo, que es exactamente lo que RNF-14 prohíbe.
 
 ### Opción B — Delta entre snapshots consecutivos del feed

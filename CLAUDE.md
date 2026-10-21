@@ -20,7 +20,7 @@ TP grupal (2-3 personas) que simula un sistema de software real en producción, 
 
 - **Vocabulario:** lo que el padre llama **bodega** acá es **proveedor**, y lo que llama **vitrina** acá es **tienda**. `vínculo`, `MLX`, `SKU` (= ISBN) y `publicación muerta` se usan igual. El **Buyer** y la **ruta bodega–vitrina** no existen en este alcance.
 - **Invariantes** (en el PRD se llaman **INV-1/2/3**; en el PRD00 son R1, R3 y R8): **INV-1** una publicación tiene un único vínculo activo que le escribe stock; **INV-2** el stock se ofrece completo en las K tiendas, sin repartir ni topear, y la sobreventa resultante es un riesgo aceptado a nivel producto; **INV-3** la **baja** de un proveedor se propaga a stock cero de forma paulatina, nunca bloqueando el pipeline; un proveedor **caído** se congela y se alerta, sin generar ceros por sí solo.
-- **Divergencias deliberadas:** sin publicaciones compartidas, sin roles, solo dos formatos de origen, y 10⁵ vínculos demostrados contra los 10⁸ que exige el original. **El PRD no nombra a Ivo Monopoly**: lo llama "el sistema original" y no entra en su vocabulario interno (bodega, vitrina, Buyer, ruta). Mantené ese criterio al editarlo.
+- **Divergencias deliberadas:** sin publicaciones compartidas, sin roles, solo dos formatos de origen, y **100.000 vínculos activos totales demostrados en 2 tiendas simuladas, 50.000 por tienda**, contra los 10⁸ que exige el original. **El PRD no nombra a Ivo Monopoly**: lo llama "el sistema original" y no entra en su vocabulario interno (bodega, vitrina, Buyer, ruta). Mantené ese criterio al editarlo.
 ## Estado actual del repositorio
 
 **Entrega 1 aprobada; revisión de la devolución en curso** al 2026-10-21. El usuario pide discutir cada punto y actualizar los documentos después de acordar el cambio. Los ADRs de infraestructura se elaborarán después de esa revisión; el video de la Entrega 1 se conserva.
@@ -54,7 +54,14 @@ El usuario confirmó que **cuenta significa usuario de Ivo Stock** y que **vincu
 
 **Reparto de MercadoLibre acordado:** por tienda, **40 req/min para sincronización habitual y 20 para operaciones masivas**, con préstamo del cupo ocioso hasta el máximo total de 60. Al volver a competir ambas clases se restablece 40/20, sin crédito para exceder el límite externo. Se cuentan lecturas y escrituras. La ingesta de feeds y el trabajo contra las bases propias no consumen esta cuota. Con ambas clases activas, la sincronización habitual dispone de 2.400 llamadas/hora; el perfil de deltas y las pruebas deben usar ese presupuesto, descontando lecturas y reintentos.
 
-Siguen pendientes de discusión la cantidad de tiendas (**punto 4.A**), la trazabilidad del criterio de éxito 7 (**punto 4.B, sin recorte acordado todavía**), el perfil de carga, los planes B, la inclusión del script de análisis, las estimaciones y responsables, y la incorporación completa de cuarentena y dead letter desde el POC con un criterio medible de resolución de R-01. Después se revisarán la infraestructura y sus ADRs, incluyendo la alternativa de RabbitMQ.
+### Acuerdo de revisión: cantidad de tiendas (punto 4.A)
+
+- **K = 2 tiendas simuladas**, demostrando el paso de una a dos sobre el mismo proveedor sin modificar código ni duplicar la ingesta.
+- **100.000 vínculos activos totales, 50.000 por tienda**, para la prueba de capacidad del MVP (RNF-13, M8). El POC mantiene su ruta reducida de un proveedor y una tienda.
+- La cantidad de **deltas por corrida sigue pendiente de acordar**. No equivale a la cantidad de vínculos: toda medición de latencia debe declarar cantidad y frecuencia de deltas por tienda, prioridades, lecturas de catálogo, reintentos y recursos.
+- Agregar tiendas aumenta el trabajo de comparación y publicación y exige nuevas mediciones; configurar una integración sin código no acredita capacidad ilimitada. Con el límite de S-08, reescribir 50.000 vínculos cuesta unas **13 horas y 53 minutos por tienda**, aun trabajando ambas en paralelo y sin lecturas ni reintentos.
+
+Siguen pendientes de discusión la trazabilidad del criterio de éxito 7 (**punto 4.B, sin recorte acordado todavía**), el perfil de carga, los planes B, la inclusión del script de análisis, las estimaciones y responsables, y la incorporación completa de cuarentena y dead letter desde el POC con un criterio medible de resolución de R-01. Después se revisarán la infraestructura y sus ADRs, incluyendo la alternativa de RabbitMQ.
 
 ## Entregas
 
@@ -217,5 +224,5 @@ Pendiente — completar cuando exista el repo. Placeholder:
 - **El catálogo de publicaciones es sintético.** Los SKU se muestrean del feed real, pero los atributos de publicación no son reales.
 - **Sin gestión de ventas no se puede cerrar el lazo.** El sistema no sabe si hubo sobreventa: solo puede demostrar que propagó a tiempo. La métrica que importa en el negocio (cancelaciones) queda fuera de lo que este sistema mide.
 - **La consistencia es eventual por diseño.** Hay una ventana entre la venta en la fuente y su reflejo en la tienda. El sistema la acota y la mide; no la elimina.
-- **La escala real del dominio excede la del MVP.** Las fuentes llegan a millones de SKU; el MVP demuestra el mecanismo en el orden de 10⁵ vínculos e identifica los cuellos de botella.
+- **La escala real del dominio excede la del MVP.** Las fuentes llegan a millones de SKU; el MVP demuestra el mecanismo con **100.000 vínculos activos totales en 2 tiendas simuladas, 50.000 por tienda**, e identifica los cuellos de botella. El perfil de deltas por corrida todavía debe acordarse; más tiendas requieren volver a medir.
 - **Un solo formato de origen probado a fondo:** solo el `.csv` se ejercita contra una fuente real.
