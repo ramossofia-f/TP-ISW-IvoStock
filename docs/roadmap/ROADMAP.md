@@ -23,8 +23,8 @@ El POC lo resuelve sobre una ruta completa y angosta: **el proveedor real Celesa
 **Qué se construye**
 
 * Repo privado compartido con la cátedra.
-* Estructura de servicios con ejecución, bases de datos y CPU independientes para la API de consulta y el motor. Intercambio asíncrono y durable, sin llamadas directas. El mecanismo se justificará en un ADR posterior.
-* `docker-compose` base con PostgreSQL, Redis y almacenamiento de objetos.
+* Estructura del repositorio en Python con FastAPI (ADR-0004), con un servicio por componente del motor y el simulador. La base de la API de consulta y su intercambio con el motor por replicación lógica (ADR-0007) se agregan en M1.
+* `docker-compose` base con PostgreSQL, Redis y almacenamiento de objetos (ADR-0005).
 * CI con build, tests y chequeo de secretos.
 * Plantilla de ADR.
 

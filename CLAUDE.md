@@ -23,7 +23,7 @@ TP grupal (2-3 personas) que simula un sistema de software real en producción, 
 - **Divergencias deliberadas:** sin publicaciones compartidas, sin roles, solo dos formatos de origen, y **100.000 vínculos activos totales demostrados en 2 tiendas simuladas, 50.000 por tienda**, contra los 10⁸ que exige el original. **El PRD no nombra a Ivo Monopoly**: lo llama "el sistema original" y no entra en su vocabulario interno (bodega, vitrina, Buyer, ruta). Mantené ese criterio al editarlo.
 ## Estado actual del repositorio
 
-**Entrega 1 aprobada. Devolución incorporada en documentos** al 2026-10-22, salvo el ADR de infraestructura. El usuario pide discutir cada punto y actualizar los documentos después de acordar el cambio. Los ADRs de infraestructura se elaborarán después de esa revisión. El video de la Entrega 1 se conserva.
+**Entrega 1 aprobada. Devolución incorporada en documentos** al 2026-10-22. Los ADRs de infraestructura (0004 a 0007) están escritos y pendientes de revisión del equipo. El usuario pide discutir cada punto y actualizar los documentos después de acordar el cambio. El video de la Entrega 1 se conserva.
 
 - **Todavía no hay código de la aplicación.** El repo contiene documentación y un script de análisis de feeds.
 - `scripts/analizar_feed.py`: caracteriza un snapshot de feed (volumen, encoding, calidad de parseo, distribución de stock, proyección de almacenamiento) y, con dos snapshots, calcula `D`, `Z` y el coeficiente de CU-07. Es la herramienta con la que se midió el feed real para §12 del PRD. El script ya está versionado (commit `ba6dae6`). **Los snapshots no se versionan** (`*.csv` está gitigneado): se pasan por parámetro.
@@ -77,7 +77,7 @@ El usuario confirmó que **cuenta significa usuario de Ivo Stock** y que **vincu
 - **R-01:** P3 tiene criterio medible (cero 429 por exceso propio, ≥ 95 % del cupo asignado, drenado dentro de ±10 % y espera acotada de la prioridad baja). El perfil de deltas sale de `D`/`Z` sobre corridas reales en P2.
 - Los títulos de plantilla de los ADRs se tradujeron al español.
 
-Siguen pendientes el ADR de infraestructura (incluyendo la alternativa de RabbitMQ) y el cierre de RF-55.
+Sigue pendiente el cierre de RF-55. La infraestructura quedó en ADR-0004 a ADR-0007 (RabbitMQ se comparó y se descartó en ADR-0006 y ADR-0007).
 
 ## Entregas
 
@@ -156,7 +156,7 @@ Queda registrado en `docs/adr/0003-componente-ml-deteccion-anomalias.md`, con §
 
 Patrón declarado: **servicios con cola de eventos**. La cola de tareas de actualización (entre el comparador y la publicación) es el mecanismo de integración, no un detalle de implementación.
 
-**Independencia acordada (RNF-20).** La interfaz y su API se ejecutan separadas del motor, con **bases de datos y CPU propios**. Las solicitudes aceptadas y los resultados se intercambian de forma asíncrona y durable. La API consulta su copia del estado. Las integraciones ya configuradas siguen sincronizando con la interfaz y su API detenidas. Con el motor detenido se puede consultar el último estado, con su fecha, y dejar operaciones pendientes. El mecanismo y la propiedad de los datos se justificarán en un ADR posterior.
+**Independencia acordada (RNF-20).** La interfaz y su API se ejecutan separadas del motor, con **bases de datos y CPU propios**. Las solicitudes aceptadas y los resultados se intercambian de forma asíncrona y durable. La API consulta su copia del estado. Las integraciones ya configuradas siguen sincronizando con la interfaz y su API detenidas. Con el motor detenido se puede consultar el último estado, con su fecha, y dejar operaciones pendientes. El mecanismo es **replicación lógica de PostgreSQL** en los dos sentidos, sobre tablas de intercambio dedicadas que funcionan como contrato (ADR-0007). Se implementa en M1.
 
 1. **Frontend web**: altas de proveedores y tiendas. Revisión de vínculos. Tablero de salud (feeds, vínculos en falla, dead letters, latencia). Vista de tiendas. Vista de proveedores.
 2. **API core**: autenticación, configuración, OAuth de tiendas, vínculos. **Sin roles ni permisos diferenciados**: los dos perfiles del PRD (responsable de catálogo y responsable de publicaciones) son responsabilidades organizativas, no roles del sistema. Todo usuario autenticado puede operar cualquier configuración. Lo que se exige es que ningún endpoint responda sin sesión.
@@ -173,22 +173,20 @@ Los workers escriben **siempre contra una interfaz de marketplace única**, con 
 
 El techo total de 3.600 llamadas/hora equivale a 21.600 en 6 horas y 43.200 en 12. Con ambas clases pendientes, el reparto 40/20 deja a sincronización habitual **2.400 llamadas/hora, 14.400 en 6 horas y 28.800 en 12**, antes de descontar lecturas y reintentos. RNF-01 exige un perfil de deltas que quepa en el caudal asignado. La cuota por sí sola no demuestra el objetivo. El préstamo permite usar más cuando la clase masiva deja cupo ocioso. **El simulador implementa el límite total de 60 req/min**, sin valores artificialmente cómodos.
 
-**Storage (variedad justificada por necesidad real):**
-- **PostgreSQL**: bases independientes para la API de consulta y para el motor, con recursos propios. El reparto de entidades, la copia de consulta y su actualización se definirán en el ADR. No usar una base compartida para cumplir RNF-20.
+**Storage decidido en ADR-0005:**
+- **PostgreSQL**: bases independientes para la API de consulta y para el motor (RNF-20). Guarda configuración, estado vigente, vínculos, estado operativo, dead letters y **la cola de tareas** (ADR-0006). INV-1 y RF-46 se expresan como índices únicos.
 - **Object storage compatible con S3** (MinIO en local): snapshot crudo e **inmutable** de cada corrida, para reproducción, revisión de cuarentenas y datos de ML.
-- **Redis**: cola de deltas con prioridad y control de rate limit por tienda, con persistencia y réplica.
+- **Redis**: **solo** control de cuota por tienda (60 req/min, 40/20 con préstamo). No guarda trabajo: perder sus contadores no pierde tareas.
 
-*Matiz de diseño que vale un ADR:* las diferencias de inventario son **reconstruibles** como `estado vigente − último valor confirmado`. Las órdenes de stock cero de RF-47 requieren además persistir la intención de corte. Comparar las alternativas de cola contra RNF-06 completo: reconstrucción de inventario, recuperación de órdenes y tareas en curso, y cero trabajo vigente perdido ante los cierres abruptos definidos en PRD §4. La infraestructura que garantice esto queda pendiente de su ADR.
+*Matiz de diseño que vale un ADR:* las diferencias de inventario son **reconstruibles** como `estado vigente − último valor confirmado`. Las órdenes de stock cero de RF-47 requieren además persistir la intención de corte. Comparar las alternativas de cola contra RNF-06 completo: reconstrucción de inventario, recuperación de órdenes y tareas en curso, y cero trabajo vigente perdido ante los cierres abruptos definidos en PRD §4. Resuelto en ADR-0006: **cola durable en PostgreSQL** (UPSERT por vínculo para RF-46, `FOR UPDATE SKIP LOCKED`, vencimiento de tareas tomadas, `LISTEN/NOTIFY` para avisar al comparador).
 
-**ADRs candidatos:** monolito modular vs. servicios separados. Cola en Redis reconstruible vs. cola durable en Postgres. Simulador propio vs. mocks o grabaciones de la API real. Snapshots en object storage vs. en Postgres. Lenguaje/framework de la API core y de los workers. Estrategia de cálculo de deltas (diff completo vs. incremental).
+**ADRs pendientes:** framework del frontend (M1) y estrategia de cálculo de deltas (diff completo vs. incremental, con datos de RNF-02 en P2).
 
-## Stack (PROPUESTO: confirmar y registrar en ADR)
+## Stack (decidido en ADR-0004 a ADR-0007, pendiente de revisión del equipo)
 
-Provisional. No lo trates como cerrado.
-
-- **Frontend:** aplicación web. Framework a confirmar (la interfaz es de formularios y tablas, no hay requerimiento gráfico).
-- **API core y workers:** a decidir por ADR (Python/FastAPI o Node son los candidatos razonables, el dominio es ingesta de datos y clientes HTTP).
-- **PostgreSQL** · **object storage compatible S3 (MinIO en local)** · **Redis**.
+- **API core, workers, simulador, generadores y ML:** **Python 3.12 con FastAPI** (ADR-0004). Bibliotecas de base: Pydantic, SQLAlchemy con Alembic, httpx, pytest, ruff.
+- **Frontend:** framework a decidir en M1 (el POC no tiene interfaz gráfica).
+- **PostgreSQL** · **object storage compatible S3 (MinIO en local)** · **Redis** (ADR-0005).
 - **Orquestación local:** Docker Compose.
 - **Simulador de MercadoLibre:** servicio propio en el mismo compose.
 
