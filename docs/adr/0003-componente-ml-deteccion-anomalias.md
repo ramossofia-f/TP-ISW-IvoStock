@@ -1,12 +1,4 @@
----
-status: Aceptado
-date: 2026-09-20
-decision-makers: Ramos, Sarachaga, Ortega
-consulted:
-informed:
----
-
-# ADR-0003 — Componente de ML: detección de anomalías en corridas de feed
+# ADR-0003: Componente de ML: detección de anomalías en corridas de feed
 
 ## Context and Problem Statement
 
@@ -21,26 +13,26 @@ Hay un antecedente que condiciona la decisión: el PRD ya define en CU-07 un **c
 * El modelo debe alimentarse de datos que el sistema ya genera por diseño, sin incorporar fuentes nuevas.
 * Debe engancharse con un caso de uso que el PRD ya tiene, en lugar de obligar a inventar uno para justificar el ML.
 * Los resultados tienen que ser honestos y verificables, no fabricados para la demo: la consigna lo exige y es criterio de evaluación.
-* Las tolerancias de CU-07 son fijas. El modelo compite contra ese baseline; no lo ajusta.
+* Las tolerancias de CU-07 son fijas. El modelo compite contra ese baseline. No lo ajusta.
 * El sistema tiene que seguir funcionando sin modelo, y decidir con el baseline cuando el modelo no esté disponible o sea inválido.
 * Equipo de 2–3 personas, sin costos significativos y sin servicios siempre encendidos.
 * La inferencia no puede comprometer RNF-02 (una corrida de 255.000 SKU procesada en menos de 10 minutos).
 
 ## Considered Options
 
-* **Opción A1** — Detección de anomalías **supervisada liviana** sobre señales de la corrida.
-* **Opción A2** — Detección de anomalías **no supervisada** sobre las mismas señales.
-* **Opción B** — Predicción de quiebre de stock por SKU.
-* **Opción C** — Emparejamiento SKU ↔ publicación con ML.
-* **Opción D** — LLM como juez de corridas.
+* **Opción A1**: Detección de anomalías **supervisada liviana** sobre señales de la corrida.
+* **Opción A2**: Detección de anomalías **no supervisada** sobre las mismas señales.
+* **Opción B**: Predicción de quiebre de stock por SKU.
+* **Opción C**: Emparejamiento SKU ↔ publicación con ML.
+* **Opción D**: LLM como juez de corridas.
 
 ## Decision Outcome
 
-Chosen option: "Opción A1 — detección de anomalías supervisada liviana", con **A2 como modelo de comparación** si el tiempo lo permite. Es la única que se apoya en datos que el sistema ya produce, se engancha con un caso de uso existente (CU-07, RF-28) y tiene un baseline contra el cual medirse de forma honesta. B y C fallan por falta de datos reales; D no es reproducible ni auditable, que es justamente lo que se evalúa.
+Chosen option: "Opción A1: detección de anomalías supervisada liviana", con **A2 como modelo de comparación** si el tiempo lo permite. Es la única que se apoya en datos que el sistema ya produce, se engancha con un caso de uso existente (CU-07, RF-28) y tiene un baseline contra el cual medirse de forma honesta. B y C fallan por falta de datos reales. D no es reproducible ni auditable, que es justamente lo que se evalúa.
 
-El modelo estima un puntaje `p_ml ∈ [0,1]` por corrida a partir de señales comparadas contra el último snapshot válido: `D`, `Z`, variación relativa de filas y de stock total, tasa de errores de parseo, y `D` restringido a los SKU con vínculo activo —es decir, la oferta que realmente se apagaría—. Es **otro estimador sobre las mismas señales**, que compite contra el noisy-OR de CU-07 sin tocar sus tolerancias.
+El modelo estima un puntaje `p_ml ∈ [0,1]` por corrida a partir de señales comparadas contra el último snapshot válido: `D`, `Z`, variación relativa de filas y de stock total, tasa de errores de parseo, y `D` restringido a los SKU con vínculo activo (es decir, la oferta que realmente se apagaría). Es **otro estimador sobre las mismas señales**, que compite contra el noisy-OR de CU-07 sin tocar sus tolerancias.
 
-Las etiquetas salen de tres lugares: corridas reales archivadas (se asumen normales salvo las que la operación haya puesto en cuarentena), corridas con corrupción inyectada por el generador de feeds (RF-37) separadas por modo de falla —truncado, columna de stock vacía, cambio de encoding, separador distinto—, y **negativos difíciles**: caídas grandes pero legítimas, por movimiento masivo de stock real, que el sistema tiene que saber distinguir de un feed truncado.
+Las etiquetas salen de tres lugares: corridas reales archivadas (se asumen normales salvo las que la operación haya puesto en cuarentena), corridas con corrupción inyectada por el generador de feeds (RF-37) separadas por modo de falla (truncado, columna de stock vacía, cambio de encoding, separador distinto), y **negativos difíciles**: caídas grandes pero legítimas, por movimiento masivo de stock real, que el sistema tiene que saber distinguir de un feed truncado.
 
 Las etiquetas positivas son sintéticas y se declaran como tales. Para que eso no vuelva circular la evaluación, el protocolo es:
 
@@ -51,14 +43,14 @@ Las etiquetas positivas son sintéticas y se declaran como tales. Para que eso n
 
 ### Consequences
 
-* Good, porque no hace falta ninguna fuente de datos nueva: RF-20 ya conserva los snapshots crudos e inmutables para reproducir la ingesta y revisar cuarentenas. Las señales del modelo se calculan sobre esos snapshots y la configuración de vínculos pertinente a cada corrida; no necesitan un historial de escrituras al marketplace. El dataset versionado de RF-51 conserva las señales utilizadas para reproducir el entrenamiento.
+* Good, porque no hace falta ninguna fuente de datos nueva: RF-20 ya conserva los snapshots crudos e inmutables para reproducir la ingesta y revisar cuarentenas. Las señales del modelo se calculan sobre esos snapshots y la configuración de vínculos pertinente a cada corrida. No necesitan un historial de escrituras al marketplace. El dataset versionado de RF-51 conserva las señales utilizadas para reproducir el entrenamiento.
 * Good, porque existe un baseline explícito contra el cual medir. Sin él, cualquier número del modelo sería incomparable y la evaluación, decorativa.
-* Good, porque la inferencia es trivial —un puntaje por corrida, no por SKU—, así que el serving y el monitoreo son abordables para el equipo y no comprometen RNF-02.
+* Good, porque la inferencia es trivial (un puntaje por corrida, no por SKU), así que el serving y el monitoreo son abordables para el equipo y no comprometen RNF-02.
 * Good, porque el sistema no queda atado al modelo: si no está entrenado, no está disponible o es inválido, decide el baseline y la ingesta no se detiene (RF-50).
 * Bad, porque las etiquetas positivas son sintéticas, con el riesgo de que el modelo aprenda el generador en lugar del fenómeno. Se acota con el protocolo de evaluación, no se elimina.
 * Bad, porque **hay que empezar a archivar corridas reales ya**: sin histórico el modelo llega sin datos al MVP. La empresa ya autorizó al equipo a archivar copias históricas del feed de Celesa, así que la recolección arranca de inmediato y no queda a la espera de ningún permiso.
 * Neutral, porque el aporte del modelo sobre el baseline puede resultar chico, sobre todo si las señales que más pesan siguen siendo `D` y `Z`. Ese resultado es válido y se reporta tal cual: la consigna pide honestidad, no que el modelo gane.
-* Neutral, porque el modelo agrega una pieza con ciclo de vida propio —versionado, actualización y rollback (RF-52)— que el sistema antes no tenía.
+* Neutral, porque el modelo agrega una pieza con ciclo de vida propio, versionado, actualización y rollback (RF-52), que el sistema antes no tenía.
 
 ### Confirmation
 
@@ -71,7 +63,7 @@ Las etiquetas positivas son sintéticas y se declaran como tales. Para que eso n
 
 ## Pros and Cons of the Options
 
-### Opción A1 — Detección de anomalías supervisada liviana
+### Opción A1: Detección de anomalías supervisada liviana
 
 Regresión logística o árbol pequeño sobre las señales de la corrida, entrenado con corridas reales y con corrupciones inyectadas.
 
@@ -82,16 +74,16 @@ Regresión logística o árbol pequeño sobre las señales de la corrida, entren
 * Bad, porque depende de etiquetas positivas sintéticas y arrastra el riesgo de circularidad.
 * Bad, porque si el modelo termina apoyándose en `D` y `Z`, que es lo que ya hace el baseline, el aporte marginal puede ser chico.
 
-### Opción A2 — Detección de anomalías no supervisada
+### Opción A2: Detección de anomalías no supervisada
 
 Isolation Forest o carta de control robusta sobre las mismas señales, entrenada solo con histórico real.
 
 * Good, porque no necesita etiquetas positivas: se entrena con datos 100 % reales.
 * Good, porque sirve como contraste metodológico de A1, y por eso se conserva como modelo de comparación.
-* Bad, porque su **propio umbral de decisión** —el del modelo, no las tolerancias fijas de CU-07— es difícil de fijar sin positivos con los que medir.
+* Bad, porque su **propio umbral de decisión** (el del modelo, no las tolerancias fijas de CU-07) es difícil de fijar sin positivos con los que medir.
 * Bad, porque es menos interpretable, y una cuarentena que no se puede explicar es difícil de defender ante el operador y ante la cátedra.
 
-### Opción B — Predicción de quiebre de stock por SKU
+### Opción B: Predicción de quiebre de stock por SKU
 
 Serie temporal sobre el stock del proveedor para anticipar cuándo un SKU llega a cero.
 
@@ -100,7 +92,7 @@ Serie temporal sobre el stock del proveedor para anticipar cuándo un SKU llega 
 * Bad, porque son 255.000 series, con un costo de entrenamiento y de serving desproporcionado para el equipo.
 * Bad, porque no está atado a ningún caso de uso del PRD: habría que agregar un CU y sus RF solo para darle lugar, ampliando alcance en la entrega más cargada.
 
-### Opción C — Emparejamiento SKU ↔ publicación con ML
+### Opción C: Emparejamiento SKU ↔ publicación con ML
 
 Resolución de identidad por título y atributos de la publicación.
 
@@ -108,7 +100,7 @@ Resolución de identidad por título y atributos de la publicación.
 * Bad, porque está explícitamente fuera de alcance: S-02 asume el SKU como clave de cruce confiable.
 * Bad, porque necesita atributos reales de publicaciones, y el catálogo del lado tienda es sintético. Entrenaría contra datos inventados por el propio equipo.
 
-### Opción D — LLM como juez de corridas
+### Opción D: LLM como juez de corridas
 
 Consultar un modelo de lenguaje sobre cada corrida.
 

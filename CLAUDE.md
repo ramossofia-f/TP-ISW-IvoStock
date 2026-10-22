@@ -2,11 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Es un **documento vivo**: actualizalo cuando se tomen decisiones. Debe mantenerse consistente con `docs/prd/validacion.md`, `docs/prd/PRD.md`, el README, los ADRs y el SRD. Si algo acá contradice una instrucción del usuario en la sesión, **gana el usuario** — y después se actualiza este archivo.
+Es un **documento vivo**: actualizalo cuando se tomen decisiones. Debe mantenerse consistente con `docs/prd/validacion.md`, `docs/prd/PRD.md`, el README, los ADRs y el SRD. Si algo acá contradice una instrucción del usuario en la sesión, **gana el usuario**, y después se actualiza este archivo.
 
 ## Qué estamos construyendo
 
-**Ivo Stock** — sincronización de inventario entre **N fuentes de stock** y **K tiendas de MercadoLibre** (TP Integrador, Ingeniería de Software, UdeSA, Primavera 2026).
+**Ivo Stock**: sincronización de inventario entre **N fuentes de stock** y **K tiendas de MercadoLibre** (TP Integrador, Ingeniería de Software, UdeSA, Primavera 2026).
 
 Una aplicación web que **se configura, no se programa**, para cada integración nueva. El usuario da de alta proveedores (un `.csv` en un SFTP / endpoint / URL, o una tabla de PostgreSQL, identificando las columnas de SKU y de stock), da de alta tiendas por **flujo OAuth 2.0** contra MercadoLibre, vincula SKU con publicaciones, y el sistema mantiene el stock sincronizado propagando **deltas**, con estado operativo por vínculo y fallas revisables.
 
@@ -14,71 +14,71 @@ El problema real que ataca: hoy cada par proveedor-tienda se resuelve con un scr
 
 TP grupal (2-3 personas) que simula un sistema de software real en producción, integrando software + datos + ML. Se evalúa criterio de ingeniería, no originalidad.
 
-**Este proyecto es un pivot.** Es una versión simplificada y acotada al pilar de **inventario** de un sistema real más grande (`ivo-monopoly`), que también cubre ventas, reservas y despacho. Nada de eso entra acá. El proyecto anterior del TP (asistente 3D de amoblamiento con Amazon Berkeley Objects) está **abandonado**; sus documentos quedaron en `docs/basura-vieja/`. 
+**Este proyecto es un pivot.** Es una versión simplificada y acotada al pilar de **inventario** de un sistema real más grande (`ivo-monopoly`), que también cubre ventas, reservas y despacho. Nada de eso entra acá. El proyecto anterior del TP (asistente 3D de amoblamiento con Amazon Berkeley Objects) está **abandonado**. Sus documentos quedaron en `docs/basura-vieja/`. 
 
 **Proyecto padre.** El PRD del padre vive en `C:\ivo-monopoly\docs\PRDs\sin-terminar\PRD00.md` y es la fuente de verdad del dominio: leelo antes de inventar semántica. Tres cosas que se heredan y no se discuten acá:
 
 - **Vocabulario:** lo que el padre llama **bodega** acá es **proveedor**, y lo que llama **vitrina** acá es **tienda**. `vínculo`, `MLX`, `SKU` (= ISBN) y `publicación muerta` se usan igual. El **Buyer** y la **ruta bodega–vitrina** no existen en este alcance.
-- **Invariantes** (en el PRD se llaman **INV-1/2/3**; en el PRD00 son R1, R3 y R8): **INV-1** una publicación tiene un único vínculo activo que le escribe stock; **INV-2** el stock se ofrece completo en las K tiendas, sin repartir ni topear, y la sobreventa resultante es un riesgo aceptado a nivel producto; **INV-3** la **baja** de un proveedor se propaga a stock cero de forma paulatina, nunca bloqueando el pipeline; un proveedor **caído** se congela y se alerta, sin generar ceros por sí solo.
+- **Invariantes** (en el PRD se llaman **INV-1/2/3**, en el PRD00 son R1, R3 y R8): **INV-1** una publicación tiene un único vínculo activo que le escribe stock. **INV-2** el stock se ofrece completo en las K tiendas, sin repartir ni topear, y la sobreventa resultante es un riesgo aceptado a nivel producto. **INV-3** la **baja** de un proveedor se propaga a stock cero de forma paulatina, nunca bloqueando el pipeline. Un proveedor **caído** se congela y se alerta, sin generar ceros por sí solo.
 - **Divergencias deliberadas:** sin publicaciones compartidas, sin roles, solo dos formatos de origen, y **100.000 vínculos activos totales demostrados en 2 tiendas simuladas, 50.000 por tienda**, contra los 10⁸ que exige el original. **El PRD no nombra a Ivo Monopoly**: lo llama "el sistema original" y no entra en su vocabulario interno (bodega, vitrina, Buyer, ruta). Mantené ese criterio al editarlo.
 ## Estado actual del repositorio
 
-**Entrega 1 aprobada; revisión de la devolución en curso** al 2026-10-21. El usuario pide discutir cada punto y actualizar los documentos después de acordar el cambio. Los ADRs de infraestructura se elaborarán después de esa revisión; el video de la Entrega 1 se conserva.
+**Entrega 1 aprobada. Revisión de la devolución en curso** al 2026-10-21. El usuario pide discutir cada punto y actualizar los documentos después de acordar el cambio. Los ADRs de infraestructura se elaborarán después de esa revisión. El video de la Entrega 1 se conserva.
 
 - **Todavía no hay código de la aplicación.** El repo contiene documentación y un script de análisis de feeds.
-- `scripts/analizar_feed.py` — caracteriza un snapshot de feed (volumen, encoding, calidad de parseo, distribución de stock, proyección de almacenamiento) y, con dos snapshots, calcula `D`, `Z` y el coeficiente de CU-07. Es la herramienta con la que se midió el feed real para §12 del PRD. El script ya está versionado (commit `ba6dae6`). **Los snapshots no se versionan** (`*.csv` está gitigneado): se pasan por parámetro.
+- `scripts/analizar_feed.py`: caracteriza un snapshot de feed (volumen, encoding, calidad de parseo, distribución de stock, proyección de almacenamiento) y, con dos snapshots, calcula `D`, `Z` y el coeficiente de CU-07. Es la herramienta con la que se midió el feed real para §12 del PRD. El script ya está versionado (commit `ba6dae6`). **Los snapshots no se versionan** (`*.csv` está gitigneado): se pasan por parámetro.
 - **El repo ya está inicializado** y con historia. La consigna exige que sea privado y compartido con la cátedra desde el inicio, con commits que reflejen la contribución real de cada integrante.
-- `docs/prd/validacion.md` — la propuesta de 1-2 carillas presentada a la cátedra. **Es un registro histórico de lo que se entregó, no la fuente de verdad vigente**: no lo edites retroactivamente. Cuando el PRD se aparta de él, gana el PRD, y la divergencia se justifica ahí. Divergencias conocidas al 2026-10-21: el volumen del feed (mide ~255.000 SKU, no ~650.000), el componente de ML (ya decidido, ADR-0003), el estado de una tienda con la cola atrasada (ahora *atrasada*, que sigue drenando, en lugar de *degradada*) y el recorte del historial completo de escrituras a información operativa (PRD §5).
-- `docs/prd/PRD.md` — PRD **versión 1.1, revisión posterior a la Entrega 1 en curso**: relación con el proyecto padre y vocabulario equivalente, casos de uso CU-01…CU-08 (**CU-09 retirado**), requisitos funcionales RF-01…RF-55 con MoSCoW y asignados a POC o MVP (**no existe RF-02**, ver la nota del propio PRD; **tampoco RF-54**, descartado antes de existir), RNF-01…RNF-22 con objetivo verificable (**no existe RNF-15**), **6 criterios de éxito vigentes (criterio 7 retirado)**, supuestos S-01…S-08, limitaciones, riesgos R-01…R-05 con ROAM, roadmap, glosario y **§12 fuentes de datos y viabilidad** (con el feed de Celesa medido sobre un snapshot real).
-- `docs/adr/` — ADR-0001 marketplace simulado detrás de una interfaz única, ADR-0002 propagación por deltas contra el estado vigente, ADR-0003 componente de ML. Formato MADR, con alternativas comparadas.
-- `docs/prd/obs.md` — observaciones del usuario sobre la validación.
-- `docs/consignas/consigna-completa.md` — enunciado oficial del TP.
-- `docs/consignas/consigna-resumida.md` — versión condensada; usar esta para consultas rápidas.
-- `docs/basura-vieja/` — documentación del proyecto abandonado. **No usar como fuente.**
-- `sessions/` — bitácoras de sesiones (ver `~/.claude/CLAUDE.md`).
+- `docs/prd/validacion.md`: la propuesta de 1-2 carillas presentada a la cátedra. **Es un registro histórico de lo que se entregó, no la fuente de verdad vigente**: no lo edites retroactivamente. Cuando el PRD se aparta de él, gana el PRD, y la divergencia se justifica ahí. Divergencias conocidas al 2026-10-21: el volumen del feed (mide ~255.000 SKU, no ~650.000), el componente de ML (ya decidido, ADR-0003), el estado de una tienda con la cola atrasada (ahora *atrasada*, que sigue drenando, en lugar de *degradada*) y el recorte del historial completo de escrituras a información operativa (PRD §5).
+- `docs/prd/PRD.md`: PRD **versión 1.1, revisión posterior a la Entrega 1 en curso**: relación con el proyecto padre y vocabulario equivalente, casos de uso CU-01…CU-08 (**CU-09 retirado**), requisitos funcionales RF-01…RF-55 con MoSCoW y asignados a POC o MVP (**no existe RF-02**, ver la nota del propio PRD, **tampoco RF-54**, descartado antes de existir), RNF-01…RNF-22 con objetivo verificable (**no existe RNF-15**), **6 criterios de éxito vigentes (criterio 7 retirado)**, supuestos S-01…S-08, limitaciones, riesgos R-01…R-05 con ROAM, roadmap, glosario y **§12 fuentes de datos y viabilidad** (con el feed de Celesa medido sobre un snapshot real).
+- `docs/adr/`: ADR-0001 marketplace simulado detrás de una interfaz única, ADR-0002 propagación por deltas contra el estado vigente, ADR-0003 componente de ML. Formato MADR, con alternativas comparadas.
+- `docs/prd/obs.md`: observaciones del usuario sobre la validación.
+- `docs/consignas/consigna-completa.md`: enunciado oficial del TP.
+- `docs/consignas/consigna-resumida.md`: versión condensada. Usar esta para consultas rápidas.
+- `docs/basura-vieja/`: documentación del proyecto abandonado. **No usar como fuente.**
+- `sessions/`: bitácoras de sesiones (ver `~/.claude/CLAUDE.md`).
 
 No asumas que hay un stack corriendo hasta que la sección "Comandos" lo confirme.
 
 ### Acuerdo de revisión: disponibilidad y conservación del trabajo
 
-- **RNF-19:** al menos **99 % de disponibilidad en una prueba de 24 horas**, medido por separado para la interfaz con su API y para el motor mediante sondas externas funcionales. `p99` se usa para percentiles de latencia, no para nombrar la disponibilidad. El motor reanuda el procesamiento automáticamente en hasta **10 minutos desde el cierre abrupto** de uno de sus procesos, con los almacenes disponibles; ese plazo no obliga a drenar toda la cola.
-- **RNF-20:** la API de consulta y el motor tienen **bases de datos y CPU separados**, sin llamadas directas. Intercambian configuración, solicitudes y resultados de forma asíncrona y durable; la API consulta su copia del estado sin leer la base del motor. Reiniciar uno no interrumpe al otro. El usuario escribirá después el ADR con el mecanismo y la topología; no elegirlos anticipadamente.
+- **RNF-19:** al menos **99 % de disponibilidad en una prueba de 24 horas**, medido por separado para la interfaz con su API y para el motor mediante sondas externas funcionales. `p99` se usa para percentiles de latencia, no para nombrar la disponibilidad. El motor reanuda el procesamiento automáticamente en hasta **10 minutos desde el cierre abrupto** de uno de sus procesos, con los almacenes disponibles. Ese plazo no obliga a drenar toda la cola.
+- **RNF-20:** la API de consulta y el motor tienen **bases de datos y CPU separados**, sin llamadas directas. Intercambian configuración, solicitudes y resultados de forma asíncrona y durable. La API consulta su copia del estado sin leer la base del motor. Reiniciar uno no interrumpe al otro. El usuario escribirá después el ADR con el mecanismo y la topología. No elegirlos anticipadamente.
 - **RNF-06:** se refuerza el requisito existente de durabilidad con **10 cierres abruptos reproducibles** y cero trabajo vigente perdido. Incluye tareas pendientes, en curso y órdenes de stock cero. Las peticiones pueden reintentarse, con efectos idempotentes. Los reemplazos de RF-46 conservan el último valor y no constituyen pérdida.
-- **429 recibidos de MercadoLibre:** espera y reintento internos, con diagnóstico técnico; sin alerta al usuario ni desglose individual en la interfaz, sin dead letter y sin sumar fallos persistentes de publicación (RF-24). El atraso que resulte sigue sujeto a RNF-01 y RF-29. Este tratamiento no define los 429 emitidos por nuestra propia API.
-- **Fallas externas:** caídas de proveedores o MercadoLibre se registran aparte y no se imputan a RNF-19; el manejo de degradación de RNF-05 se mantiene. Las fallas de almacenes y componentes propios sí cuentan.
-- **Verificación:** protocolo en PRD §4; pruebas de conservación y recuperación en P3, independencia en P5 y medición de 24 horas en M8. Son compromisos de diseño pendientes de implementación, no resultados obtenidos.
+- **429 recibidos de MercadoLibre:** espera y reintento internos, con diagnóstico técnico. Sin alerta al usuario ni desglose individual en la interfaz, sin dead letter y sin sumar fallos persistentes de publicación (RF-24). El atraso que resulte sigue sujeto a RNF-01 y RF-29. Este tratamiento no define los 429 emitidos por nuestra propia API.
+- **Fallas externas:** caídas de proveedores o MercadoLibre se registran aparte y no se imputan a RNF-19. El manejo de degradación de RNF-05 se mantiene. Las fallas de almacenes y componentes propios sí cuentan.
+- **Verificación:** protocolo en PRD §4. Pruebas de conservación y recuperación en P3, independencia en P5 y medición de 24 horas en M8. Son compromisos de diseño pendientes de implementación, no resultados obtenidos.
 
-**Punto 3 en revisión:** el usuario acordó **1.000 usuarios activos a una consulta por segundo cada uno, p95 menor a 2 segundos** (RNF-21), y **60 solicitudes por minuto por usuario** para la API detrás de la interfaz (RNF-22). La cuota suma sesiones y clientes y excluye archivos estáticos. Ante un 429 con `Retry-After`, la interfaz conserva la pantalla y muestra **«Demasiadas solicitudes; reintentá en X segundos»**. La capacidad se prueba durante 30 minutos con el motor activo y sus bases y CPU separados; son objetivos pendientes de implementación y medición.
+**Punto 3 en revisión:** el usuario acordó **1.000 usuarios activos a una consulta por segundo cada uno, p95 menor a 2 segundos** (RNF-21), y **60 solicitudes por minuto por usuario** para la API detrás de la interfaz (RNF-22). La cuota suma sesiones y clientes y excluye archivos estáticos. Ante un 429 con `Retry-After`, la interfaz conserva la pantalla y muestra **«Demasiadas solicitudes. Reintentá en X segundos»**. La capacidad se prueba durante 30 minutos con el motor activo y sus bases y CPU separados. Son objetivos pendientes de implementación y medición.
 
-El usuario confirmó que **cuenta significa usuario de Ivo Stock** y que **vinculación es un lote para un par proveedor–tienda**. RF-55 todavía fija un alta o baja en conjunto y un lote por usuario y día; su simplificación sigue en discusión. El usuario propone hasta tres trabajos masivos de alta/baja sin fecha de finalización comprometida, retirando la propuesta de p95 de 72 horas. Quedan pendientes el alcance global o por usuario del cupo, si incluye trabajos en ejecución, las vinculaciones por lote y la delimitación de RNF-01. La cuota diaria no se elimina hasta acordar su reemplazo. Tampoco se ha acordado la propuesta de una única operación masiva en ejecución. La distribución de ráfagas de la cuota propia sigue pendiente.
+El usuario confirmó que **cuenta significa usuario de Ivo Stock** y que **vinculación es un lote para un par proveedor–tienda**. RF-55 todavía fija un alta o baja en conjunto y un lote por usuario y día. Su simplificación sigue en discusión. El usuario propone hasta tres trabajos masivos de alta/baja sin fecha de finalización comprometida, retirando la propuesta de p95 de 72 horas. Quedan pendientes el alcance global o por usuario del cupo, si incluye trabajos en ejecución, las vinculaciones por lote y la delimitación de RNF-01. La cuota diaria no se elimina hasta acordar su reemplazo. Tampoco se ha acordado la propuesta de una única operación masiva en ejecución. La distribución de ráfagas de la cuota propia sigue pendiente.
 
-**Reparto de MercadoLibre acordado:** por tienda, **40 req/min para sincronización habitual y 20 para operaciones masivas**, con préstamo del cupo ocioso hasta el máximo total de 60. Al volver a competir ambas clases se restablece 40/20, sin crédito para exceder el límite externo. Se cuentan lecturas y escrituras. La ingesta de feeds y el trabajo contra las bases propias no consumen esta cuota. Con ambas clases activas, la sincronización habitual dispone de 2.400 llamadas/hora; el perfil de deltas y las pruebas deben usar ese presupuesto, descontando lecturas y reintentos.
+**Reparto de MercadoLibre acordado:** por tienda, **40 req/min para sincronización habitual y 20 para operaciones masivas**, con préstamo del cupo ocioso hasta el máximo total de 60. Al volver a competir ambas clases se restablece 40/20, sin crédito para exceder el límite externo. Se cuentan lecturas y escrituras. La ingesta de feeds y el trabajo contra las bases propias no consumen esta cuota. Con ambas clases activas, la sincronización habitual dispone de 2.400 llamadas/hora. El perfil de deltas y las pruebas deben usar ese presupuesto, descontando lecturas y reintentos.
 
 ### Acuerdo de revisión: cantidad de tiendas (punto 4.A)
 
 - **K = 2 tiendas simuladas**, demostrando el paso de una a dos sobre el mismo proveedor sin modificar código ni duplicar la ingesta.
 - **100.000 vínculos activos totales, 50.000 por tienda**, para la prueba de capacidad del MVP (RNF-13, M8). El POC mantiene su ruta reducida de un proveedor y una tienda.
 - La cantidad de **deltas por corrida sigue pendiente de acordar**. No equivale a la cantidad de vínculos: toda medición de latencia debe declarar cantidad y frecuencia de deltas por tienda, prioridades, lecturas de catálogo, reintentos y recursos.
-- Agregar tiendas aumenta el trabajo de comparación y publicación y exige nuevas mediciones; configurar una integración sin código no acredita capacidad ilimitada. Con el límite de S-08, reescribir 50.000 vínculos cuesta unas **13 horas y 53 minutos por tienda**, aun trabajando ambas en paralelo y sin lecturas ni reintentos.
+- Agregar tiendas aumenta el trabajo de comparación y publicación y exige nuevas mediciones. Configurar una integración sin código no acredita capacidad ilimitada. Con el límite de S-08, reescribir 50.000 vínculos cuesta unas **13 horas y 53 minutos por tienda**, aun trabajando ambas en paralelo y sin lecturas ni reintentos.
 
 ### Acuerdo de revisión: información operativa (punto 4.B)
 
-- El usuario acordó **recortar el historial completo y conservar la información operativa**. Se retiran el criterio de éxito 7 y CU-09; sus identificadores no se reutilizan ni se renumeran los restantes.
+- El usuario acordó **recortar el historial completo y conservar la información operativa**. Se retiran el criterio de éxito 7 y CU-09. Sus identificadores no se reutilizan ni se renumeran los restantes.
 - **RF-30** conserva por vínculo el último stock deseado, el último confirmado, la fecha de la última actualización exitosa si la hubo, el trabajo pendiente y el estado de falla. Un intento fallido no modifica el último confirmado ni borra una dead letter pendiente y su contexto.
-- Se mantienen el tablero, las fallas revisables con delta/respuesta/fecha, la cuarentena, los registros de trabajo y logs correlacionados por corrida, tarea y vínculo. Las pruebas siguen aportando evidencia por corrida y tarea para RNF-03, RNF-04 y RNF-06. Apagar un vínculo conserva su identidad y configuración; no promete un historial de todas sus escrituras.
+- Se mantienen el tablero, las fallas revisables con delta/respuesta/fecha, la cuarentena, los registros de trabajo y logs correlacionados por corrida, tarea y vínculo. Las pruebas siguen aportando evidencia por corrida y tarea para RNF-03, RNF-04 y RNF-06. Apagar un vínculo conserva su identidad y configuración. No promete un historial de todas sus escrituras.
 - **RF-20** mantiene los snapshots crudos e inmutables para reproducir corridas, revisar cuarentenas y preparar los datos de ML. El modelo usa esos snapshots y las señales de corrida, sin depender de una auditoría histórica de escrituras al marketplace.
-- El historial completo consultable por SKU o publicación y su portal quedan fuera de alcance. `validacion.md` se conserva como registro histórico; el recorte se declara en el PRD. Estas son decisiones de documentación pendientes de implementación.
+- El historial completo consultable por SKU o publicación y su portal quedan fuera de alcance. `validacion.md` se conserva como registro histórico. El recorte se declara en el PRD. Estas son decisiones de documentación pendientes de implementación.
 
 Siguen pendientes de discusión el perfil de carga, los planes B, las estimaciones y responsables, y la incorporación completa de cuarentena y dead letter desde el POC con un criterio medible de resolución de R-01. Después se revisarán la infraestructura y sus ADRs, incluyendo la alternativa de RabbitMQ.
 
 ## Entregas
 
-1. **Entrega 1 — Diseño:** PRD (perspectiva del usuario: problema, usuarios y casos de uso, RF priorizados, RNF, criterios de éxito medibles, supuestos y limitaciones) + fuentes de datos y viabilidad profundizadas + Roadmap a POC y MVP. Requiere proyecto ya aprobado.
-2. **Entrega 2 — POC + SRD:** flujo principal de punta a punta con datos reales, alcance reducido, **el riesgo técnico más grande ya resuelto**. CI y testing operativos. Levantable localmente. ADRs. SRD sin componentes de ML todavía.
-3. **Entrega 3 — MVP:** todos los RF imprescindibles funcionando, ciclo de vida automatizado, readiness cloud demostrable, RNF verificables incluyendo observabilidad, pipeline de ML reproducible con serving y monitoreo, SRD completo.
+1. **Entrega 1 (Diseño):** PRD (perspectiva del usuario: problema, usuarios y casos de uso, RF priorizados, RNF, criterios de éxito medibles, supuestos y limitaciones) + fuentes de datos y viabilidad profundizadas + Roadmap a POC y MVP. Requiere proyecto ya aprobado.
+2. **Entrega 2 (POC + SRD):** flujo principal de punta a punta con datos reales, alcance reducido, **el riesgo técnico más grande ya resuelto**. CI y testing operativos. Levantable localmente. ADRs. SRD sin componentes de ML todavía.
+3. **Entrega 3 (MVP):** todos los RF imprescindibles funcionando, ciclo de vida automatizado, readiness cloud demostrable, RNF verificables incluyendo observabilidad, pipeline de ML reproducible con serving y monitoreo, SRD completo.
 
 
-Cada entrega: link a un commit en `main` + README actualizado + directorio de ADRs + video de 5-12 minutos. Lo que no esté integrado a `main` al momento de la entrega **no se corrige**; lo que no se pueda verificar por código y no esté demostrado en el video se considera no hecho.
+Cada entrega: link a un commit en `main` + README actualizado + directorio de ADRs + video de 5-12 minutos. Lo que no esté integrado a `main` al momento de la entrega **no se corrige**. Lo que no se pueda verificar por código y no esté demostrado en el video se considera no hecho.
 
 ## Reglas duras (no negociables)
 
@@ -86,41 +86,41 @@ Cada entrega: link a un commit en `main` + README actualizado + directorio de AD
 - **Patrón arquitectónico explícito y justificado.** La coherencia entre el patrón declarado y lo efectivamente construido es criterio de evaluación directo.
 - **Sin costos significativos.** Free tiers, recursos efímeros o ejecución local. No introduzcas servicios cloud pagos siempre-encendidos.
 - **Secretos por variables de entorno / `.env` (gitigneado). Nunca commitees credenciales, tokens ni claves.** Crítico acá: el proyecto maneja credenciales de proveedores reales y tokens OAuth de cuentas reales. En documentación, las URLs con credenciales van con placeholders (`<usuario>`, `<clave>`).
-- **No commitear datos.** Snapshots de feeds, catálogos generados y volcados de stock NO van al control de versiones. El repo se mantiene liviano; los datos se obtienen o se generan con scripts del propio sistema.
+- **No commitear datos.** Snapshots de feeds, catálogos generados y volcados de stock NO van al control de versiones. El repo se mantiene liviano. Los datos se obtienen o se generan con scripts del propio sistema.
 - **Nunca escribir stock contra publicaciones productivas reales.** El desarrollo y la demo van contra el simulador. Una escritura equivocada tiene consecuencias comerciales para una empresa real.
 - **Cada decisión estructural lleva un ADR que COMPARA ALTERNATIVAS.** Un ADR que solo describe el camino elegido es inválido para la evaluación. Formato simple: contexto, opciones consideradas con sus trade-offs, decisión, consecuencias.
 - **CI/CD y testing operativos desde la Entrega 2** (POC), no recién en el MVP. Los **caminos de falla** (cuarentena, dead letter, rate limit, token revocado) llevan test propio.
-- **Honestidad en resultados.** Nada de outputs fabricados para la demo; lo que se muestra tiene que ser reproducible desde el código. Que el marketplace esté simulado se declara, no se disimula.
-- **Datos reales** (públicos, propios o sintéticos). Si son sintéticos, **el generador es parte del sistema y se evalúa como tal** — por eso los generadores y el simulador son RF (RF-35 a RF-38), no herramientas de testing.
+- **Honestidad en resultados.** Nada de outputs fabricados para la demo. Lo que se muestra tiene que ser reproducible desde el código. Que el marketplace esté simulado se declara, no se disimula.
+- **Datos reales** (públicos, propios o sintéticos). Si son sintéticos, **el generador es parte del sistema y se evalúa como tal**: por eso los generadores y el simulador son RF (RF-35 a RF-38), no herramientas de testing.
 - **Commits chicos y coherentes, con mensajes claros.** La materia evalúa la historia de git y la contribución real de cada integrante, sin excepción.
 - **Todo lo declarado debe ser verificable en el repo.** Validación, PRD, SRD, ADRs y código tienen que contar la misma historia.
 
-## Producto — flujos
+## Producto: flujos
 
 **Alta de un proveedor (fuente de stock).** El sistema acepta **dos formatos y nada más**, y el alta empieza preguntando cuál es:
 
-- **`.csv`** desde SFTP, endpoint HTTP o URL. Pregunta el **separador**, si **tiene encabezado**, y la **posición** de la columna de SKU y de stock (o su nombre, si hay encabezado). La posición es obligatoria porque hay fuentes reales sin encabezado — pedir solo "nombre de columna" no alcanza.
+- **`.csv`** desde SFTP, endpoint HTTP o URL. Pregunta el **separador**, si **tiene encabezado**, y la **posición** de la columna de SKU y de stock (o su nombre, si hay encabezado). La posición es obligatoria porque hay fuentes reales sin encabezado: pedir solo "nombre de columna" no alcanza.
 - **Conexión a una tabla de PostgreSQL.** Pide los datos de conexión, el nombre de la tabla y el **nombre de columna** de SKU y de stock.
 
 Después muestra un **preview best-effort** de las primeras filas ya parseadas, y el alta no se da por buena hasta que **el sistema la valida con un fetch de prueba** (unos pocos SKU con su stock). Solo entonces el proveedor queda *validado*. El usuario le asigna una **prioridad (Baja / Media / Alta)**, que heredan sus deltas y define su posición en la cola de trabajo.
 
 **Alta de una tienda.** Flujo **OAuth 2.0** (authorization code + refresh + revocación) contra MercadoLibre. Al completarse arranca en background la lectura del catálogo, **en dos etapas**: primero los identificadores MLX de la tienda y, con la lista completa, el stock y los atributos de cada publicación. Ese stock leído es el que después evita escrituras al vano. Si la lectura falla no es catastrófico: se notifica y se trabaja con lo que se alcanzó a traer. El usuario puede **cargar IDs a mano** (se validan contra la API y se incorporan los que existen). Desde ahí el catálogo se mantiene por **webhooks** de publicación nueva.
 
-**Vinculación.** En cualquier momento entre un proveedor *validado* y una tienda *autenticada*. El sistema cruza SKU contra catálogo y **sugiere** coincidencias; el usuario acepta todas, algunas o ninguna, con búsqueda y exclusión puntual. Sobre vínculos existentes opera como **interruptor ON/OFF**: el OFF propaga **stock cero** a la tienda de ese vínculo, y apagarlo **conserva su identidad y configuración, su último estado operativo y sus fallas pendientes** (no es un alta y una baja). **Regla única de corte (RF-47):** apagar un vínculo, dar de baja un proveedor y desconectar una tienda disparan la misma acción — cero primero, desactivación después. Nunca dejes una publicación con el último stock conocido de una fuente que dejó de alimentarla. **Sin reparto ni topeo**: si la fuente informa 10 unidades, las K tiendas ven 10. **Una publicación admite un único vínculo activo**: el segundo intento se rechaza con error.
+**Vinculación.** En cualquier momento entre un proveedor *validado* y una tienda *autenticada*. El sistema cruza SKU contra catálogo y **sugiere** coincidencias. El usuario acepta todas, algunas o ninguna, con búsqueda y exclusión puntual. Sobre vínculos existentes opera como **interruptor ON/OFF**: el OFF propaga **stock cero** a la tienda de ese vínculo, y apagarlo **conserva su identidad y configuración, su último estado operativo y sus fallas pendientes** (no es un alta y una baja). **Regla única de corte (RF-47):** apagar un vínculo, dar de baja un proveedor y desconectar una tienda disparan la misma acción: cero primero, desactivación después. Nunca dejes una publicación con el último stock conocido de una fuente que dejó de alimentarla. **Sin reparto ni topeo**: si la fuente informa 10 unidades, las K tiendas ven 10. **Una publicación admite un único vínculo activo**: el segundo intento se rechaza con error.
 
 Dos reglas que ordenan el arranque y son fáciles de romper al implementar: **vincular exige al menos una corrida aceptada** del proveedor (la lista de SKU sale de ahí, no del fetch de prueba del alta), y **al crear un vínculo se compara el stock del proveedor contra el que MercadoLibre reporta para esa publicación, encolando solo las diferencias**. De ahí se deduce que la primera corrida de un proveedor nunca propaga nada: todavía no hay vínculos.
 
-**Motor de sincronización.** Snapshot crudo → normalización → **estado vigente** → comparación contra los vínculos → **delta**. Solo los deltas se propagan. Cada corrida aceptada **reemplaza** el estado vigente completo: **un SKU que no viene en la corrida vale cero**, igual que un cero explícito, y no conserva su valor previo. Cada delta entra a la cola con la prioridad del proveedor; **el encolado es idempotente por vínculo** (RF-46): a lo sumo una tarea pendiente por vínculo, y la nueva reemplaza a la pendiente conservando su prioridad. La publicación respeta los límites de consumo por tienda, es **idempotente** y reintenta con backoff ante errores transitorios. Un **error no reintentable** (publicación cerrada, token revocado, payload rechazado) no se descarta en silencio: va a **dead letter** con el delta, la respuesta de la API y el momento de la falla, revisable desde el tablero de salud. Se mantiene el estado operativo por vínculo y los registros de trabajo necesarios para diagnóstico y recuperación.
+**Motor de sincronización.** Snapshot crudo → normalización → **estado vigente** → comparación contra los vínculos → **delta**. Solo los deltas se propagan. Cada corrida aceptada **reemplaza** el estado vigente completo: **un SKU que no viene en la corrida vale cero**, igual que un cero explícito, y no conserva su valor previo. Cada delta entra a la cola con la prioridad del proveedor. **El encolado es idempotente por vínculo** (RF-46): a lo sumo una tarea pendiente por vínculo, y la nueva reemplaza a la pendiente conservando su prioridad. La publicación respeta los límites de consumo por tienda, es **idempotente** y reintenta con backoff ante errores transitorios. Un **error no reintentable** (publicación cerrada, token revocado, payload rechazado) no se descarta en silencio: va a **dead letter** con el delta, la respuesta de la API y el momento de la falla, revisable desde el tablero de salud. Se mantiene el estado operativo por vínculo y los registros de trabajo necesarios para diagnóstico y recuperación.
 
-**Degradación explícita (el "plan B" es una propiedad del sistema, no un reemplazo de datos).** Dos estados distintos del lado tienda, porque le piden al usuario cosas opuestas: si la API no responde o el token fue revocado la tienda pasa a *degradada*, se deja de consumir su cola y se **alerta traspasando la operación** al frontend de MercadoLibre; si hay una tarea **encolada hace más de 12 horas** la tienda pasa a *atrasada*, la cola **sigue drenando** y la alerta es de capacidad, sin invitar a operar a mano (el usuario y el worker se pisarían). En ambos casos la cola persiste. Ante falla o corrupción severa de un feed, la corrida queda en **cuarentena**, **no se propaga ningún delta**, el proveedor pasa a *degradado* y las demás fuentes siguen operando. **Ningún estado de excepción propaga stock cero:** el único camino al cero automático es la baja del proveedor (RF-40) o la regla de corte (RF-47), ambas disparadas por una persona.
+**Degradación explícita (el "plan B" es una propiedad del sistema, no un reemplazo de datos).** Dos estados distintos del lado tienda, porque le piden al usuario cosas opuestas: si la API no responde o el token fue revocado la tienda pasa a *degradada*, se deja de consumir su cola y se **alerta traspasando la operación** al frontend de MercadoLibre. Si hay una tarea **encolada hace más de 12 horas** la tienda pasa a *atrasada*, la cola **sigue drenando** y la alerta es de capacidad, sin invitar a operar a mano (el usuario y el worker se pisarían). En ambos casos la cola persiste. Ante falla o corrupción severa de un feed, la corrida queda en **cuarentena**, **no se propaga ningún delta**, el proveedor pasa a *degradado* y las demás fuentes siguen operando. **Ningún estado de excepción propaga stock cero:** el único camino al cero automático es la baja del proveedor (RF-40) o la regla de corte (RF-47), ambas disparadas por una persona.
 
 La corrupción de una corrida se decide con el **coeficiente de sospecha** definido en CU-07 del PRD: cuarentena si `p > 0.5`, con `p = 1 − (1−d)(1−z)` sobre dos señales, SKU faltantes (`D`, tolerancia `0.10`) y ceros nuevos en masa (`Z`, tolerancia `0.25`). Las tolerancias son **fijas y no se calibran** contra ningún histórico: `0.10` y `0.25` son los valores que *saturan* cada señal, así que el disparo real de una señal sola está en `D > 5 %` o `Z > 12.5 %`.
 
-**Los errores de parseo no entran al coeficiente**: un stock de texto o negativo descarta la fila; un stock **en blanco se interpreta como sin stock (0)**, no como dato ausente, así que el SKU no conserva su valor vigente. Pasado el **10 % de filas con error de parseo** se emite una alerta que **no** detiene la corrida — el umbral es fijo, no se calibra. No hace falta que la detenga: una fila descartada es un SKU ausente (lo mide `D`) y una columna de stock vacía es un cero (lo mide `Z`). La regla de parseo existe por robustez, no porque Celesa la ejercite: el snapshot medido no trae **ninguna** fila con stock no numérico (PRD §12). Los pocos SKU con letras son **ISBN alfanuméricos válidos**, no errores.
+**Los errores de parseo no entran al coeficiente**: un stock de texto o negativo descarta la fila. Un stock **en blanco se interpreta como sin stock (0)**, no como dato ausente, así que el SKU no conserva su valor vigente. Pasado el **10 % de filas con error de parseo** se emite una alerta que **no** detiene la corrida: el umbral es fijo, no se calibra. No hace falta que la detenga: una fila descartada es un SKU ausente (lo mide `D`) y una columna de stock vacía es un cero (lo mide `Z`). La regla de parseo existe por robustez, no porque Celesa la ejercite: el snapshot medido no trae **ninguna** fila con stock no numérico (PRD §12). Los pocos SKU con letras son **ISBN alfanuméricos válidos**, no errores.
 
 ## Fuentes de datos
 
-**1. Feed de stock de Celesa (proveedor real, en producción hoy).** Endpoint HTTP con autenticación por parámetros de query, credenciales propias de la empresa. ~**255.000 SKU**, actualización cada **30 minutos**, texto plano `SKU;stock` separado por `;`, **sin encabezado**, UTF-8, ~4 MB por corrida. Medido sobre un snapshot real (PRD §12): el feed **solo lista SKU con stock disponible** (rango 1 a 50, nunca 0), trae unos pocos SKU duplicados y algún **ISBN alfanumérico** — el SKU se trata como cadena, nunca como número. Es la fuente real del lado proveedor y el caso que justifica el contrato de alta por separador + posición.
+**1. Feed de stock de Celesa (proveedor real, en producción hoy).** Endpoint HTTP con autenticación por parámetros de query, credenciales propias de la empresa. ~**255.000 SKU**, actualización cada **30 minutos**, texto plano `SKU;stock` separado por `;`, **sin encabezado**, UTF-8, ~4 MB por corrida. Medido sobre un snapshot real (PRD §12): el feed **solo lista SKU con stock disponible** (rango 1 a 50, nunca 0), trae unos pocos SKU duplicados y algún **ISBN alfanumérico**: el SKU se trata como cadena, nunca como número. Es la fuente real del lado proveedor y el caso que justifica el contrato de alta por separador + posición.
 
 Otras fuentes relevadas, solo para dimensionar (no entran al MVP): Ingram ~10M SKU, SBS ~1M, bodegas propias ~50k. Sirven para justificar propagación por deltas en lugar de reescritura completa.
 
@@ -134,9 +134,9 @@ Otras fuentes relevadas, solo para dimensionar (no entran al MVP): Ingram ~10M S
 
 Es lo que permite provocar rate limit, token revocado a mitad de corrida y publicación cerrada cuando hacen falta.
 
-## ML — DEFINIDO (ADR-0003). No construir nada hasta el hito M5.
+## ML: DEFINIDO (ADR-0003). No construir nada hasta el hito M5.
 
-La Entrega 3 exige un pipeline de ML reproducible con serving y monitoreo. La decisión tomada es la **detección de anomalías en corridas de feed** —clasificar una corrida como confiable o sospechosa antes de propagarla—, alimentada por el histórico de snapshots crudos, las señales y decisiones de las corridas y la configuración de vínculos pertinente al cálculo, sin fuentes adicionales ni dependencia del historial de escrituras al marketplace.
+La Entrega 3 exige un pipeline de ML reproducible con serving y monitoreo. La decisión tomada es la **detección de anomalías en corridas de feed** (clasificar una corrida como confiable o sospechosa antes de propagarla), alimentada por el histórico de snapshots crudos, las señales y decisiones de las corridas y la configuración de vínculos pertinente al cálculo, sin fuentes adicionales ni dependencia del historial de escrituras al marketplace.
 
 El enganche está definido: el MVP decide con el **coeficiente de sospecha de CU-07** (señales `D` faltantes y `Z` ceros nuevos, combinadas con *noisy-OR* contra tolerancias fijas). El modelo es **otro estimador sobre las mismas señales**, no un reajuste de las tolerancias: el coeficiente **no se reemplaza**, queda como baseline y **fallback permanente**, y decide por defecto mientras no haya un modelo entrenado y válido. El coeficiente es un *score*, no una probabilidad calibrada: no lo documentes como probabilidad.
 
@@ -144,40 +144,40 @@ Queda registrado en `docs/adr/0003-componente-ml-deteccion-anomalias.md`, con §
 
 ## Arquitectura (bosquejo, en evolución)
 
-Patrón declarado: **servicios con cola de eventos**. La cola de tareas de actualización —entre el comparador y la publicación— es el mecanismo de integración, no un detalle de implementación.
+Patrón declarado: **servicios con cola de eventos**. La cola de tareas de actualización (entre el comparador y la publicación) es el mecanismo de integración, no un detalle de implementación.
 
-**Independencia acordada (RNF-20).** La interfaz y su API se ejecutan separadas del motor, con **bases de datos y CPU propios**. Las solicitudes aceptadas y los resultados se intercambian de forma asíncrona y durable; la API consulta su copia del estado. Las integraciones ya configuradas siguen sincronizando con la interfaz y su API detenidas. Con el motor detenido se puede consultar el último estado, con su fecha, y dejar operaciones pendientes. El mecanismo y la propiedad de los datos se justificarán en un ADR posterior.
+**Independencia acordada (RNF-20).** La interfaz y su API se ejecutan separadas del motor, con **bases de datos y CPU propios**. Las solicitudes aceptadas y los resultados se intercambian de forma asíncrona y durable. La API consulta su copia del estado. Las integraciones ya configuradas siguen sincronizando con la interfaz y su API detenidas. Con el motor detenido se puede consultar el último estado, con su fecha, y dejar operaciones pendientes. El mecanismo y la propiedad de los datos se justificarán en un ADR posterior.
 
-1. **Frontend web** — altas de proveedores y tiendas; revisión de vínculos; tablero de salud (feeds, vínculos en falla, dead letters, latencia); vista de tiendas; vista de proveedores.
-2. **API core** — autenticación, configuración, OAuth de tiendas, vínculos. **Sin roles ni permisos diferenciados**: los dos perfiles del PRD (responsable de catálogo y responsable de publicaciones) son responsabilidades organizativas, no roles del sistema. Todo usuario autenticado puede operar cualquier configuración; lo que se exige es que ningún endpoint responda sin sesión.
-3. **Worker de ingesta** — descarga, normalización, snapshot crudo y validación de corrida. Su único producto es el **estado vigente** del proveedor; no escribe en ninguna tienda.
-4. **Worker comparador** — notificado ante cada cambio del estado vigente, compara contra el stock de los vínculos afectados y encola **solo las diferencias**. Atiende también los otros disparadores: alta de vínculo, ON/OFF, baja de proveedor, desconexión de tienda, tienda que sale de degradada.
-5. **Worker de publicación** — consume la cola por prioridad y escribe contra la API, con rate limit, reintentos, idempotencia y dead letters.
-6. **Worker de catálogo** — lectura inicial del catálogo de una tienda nueva (MLX primero, después stock y atributos), recepción de webhooks, validación de los IDs cargados a mano.
+1. **Frontend web**: altas de proveedores y tiendas. Revisión de vínculos. Tablero de salud (feeds, vínculos en falla, dead letters, latencia). Vista de tiendas. Vista de proveedores.
+2. **API core**: autenticación, configuración, OAuth de tiendas, vínculos. **Sin roles ni permisos diferenciados**: los dos perfiles del PRD (responsable de catálogo y responsable de publicaciones) son responsabilidades organizativas, no roles del sistema. Todo usuario autenticado puede operar cualquier configuración. Lo que se exige es que ningún endpoint responda sin sesión.
+3. **Worker de ingesta**: descarga, normalización, snapshot crudo y validación de corrida. Su único producto es el **estado vigente** del proveedor. No escribe en ninguna tienda.
+4. **Worker comparador**: notificado ante cada cambio del estado vigente, compara contra el stock de los vínculos afectados y encola **solo las diferencias**. Atiende también los otros disparadores: alta de vínculo, ON/OFF, baja de proveedor, desconexión de tienda, tienda que sale de degradada.
+5. **Worker de publicación**: consume la cola por prioridad y escribe contra la API, con rate limit, reintentos, idempotencia y dead letters.
+6. **Worker de catálogo**: lectura inicial del catálogo de una tienda nueva (MLX primero, después stock y atributos), recepción de webhooks, validación de los IDs cargados a mano.
 
-**No fusiones ingesta y comparación en un solo worker.** Son dos procesos separados acoplados solo por el estado vigente: la ingesta no sabe de vínculos, y la comparación tiene disparadores que no son feeds. La cola entre el comparador y la publicación es la pieza que tiene que ser **robusta y resistente a fallas** — tareas persistidas, entrega al menos una vez, apoyada en idempotencia, y **a lo sumo una tarea pendiente por vínculo** (la nueva reemplaza a la vieja). Esa última propiedad acota la cola pendiente de una tienda a su cantidad de vínculos activos, sin importar cuántas corridas se acumulen.
+**No fusiones ingesta y comparación en un solo worker.** Son dos procesos separados acoplados solo por el estado vigente: la ingesta no sabe de vínculos, y la comparación tiene disparadores que no son feeds. La cola entre el comparador y la publicación es la pieza que tiene que ser **robusta y resistente a fallas**: tareas persistidas, entrega al menos una vez, apoyada en idempotencia, y **a lo sumo una tarea pendiente por vínculo** (la nueva reemplaza a la vieja). Esa última propiedad acota la cola pendiente de una tienda a su cantidad de vínculos activos, sin importar cuántas corridas se acumulen.
 
 Los workers escriben **siempre contra una interfaz de marketplace única**, con dos implementaciones detrás (simulada y real) seleccionables por configuración. Conectar una tienda productiva más adelante es cambiar configuración, no reescribir el motor.
 
-**Cota dura que ordena todo el diseño:** la API de MercadoLibre limita el **endpoint de actualización de stock** a **60 req/min por tienda** —más estricto que el límite general por vendedor, como es habitual endpoint por endpoint—, o sea **3.600 actualizaciones por hora y por tienda**. Ninguna decisión de infraestructura propia la mueve, y **el presupuesto es compartido entre escribir stock y leer catálogo** (webhooks, validación de IDs a mano, relecturas manuales): todas las llamadas a una tienda pasan por el mismo control de cuota. La única lectura que no compite es la inicial de una tienda nueva, porque en ese momento esa tienda todavía no tiene vínculos.
+**Cota dura que ordena todo el diseño:** la API de MercadoLibre limita el **endpoint de actualización de stock** a **60 req/min por tienda** (más estricto que el límite general por vendedor, como es habitual endpoint por endpoint), o sea **3.600 actualizaciones por hora y por tienda**. Ninguna decisión de infraestructura propia la mueve, y **el presupuesto es compartido entre escribir stock y leer catálogo** (webhooks, validación de IDs a mano, relecturas manuales): todas las llamadas a una tienda pasan por el mismo control de cuota. La única lectura que no compite es la inicial de una tienda nueva, porque en ese momento esa tienda todavía no tiene vínculos.
 
-El techo total de 3.600 llamadas/hora equivale a 21.600 en 6 horas y 43.200 en 12. Con ambas clases pendientes, el reparto 40/20 deja a sincronización habitual **2.400 llamadas/hora, 14.400 en 6 horas y 28.800 en 12**, antes de descontar lecturas y reintentos. RNF-01 exige un perfil de deltas que quepa en el caudal asignado; la cuota por sí sola no demuestra el objetivo. El préstamo permite usar más cuando la clase masiva deja cupo ocioso. **El simulador implementa el límite total de 60 req/min**, sin valores artificialmente cómodos.
+El techo total de 3.600 llamadas/hora equivale a 21.600 en 6 horas y 43.200 en 12. Con ambas clases pendientes, el reparto 40/20 deja a sincronización habitual **2.400 llamadas/hora, 14.400 en 6 horas y 28.800 en 12**, antes de descontar lecturas y reintentos. RNF-01 exige un perfil de deltas que quepa en el caudal asignado. La cuota por sí sola no demuestra el objetivo. El préstamo permite usar más cuando la clase masiva deja cupo ocioso. **El simulador implementa el límite total de 60 req/min**, sin valores artificialmente cómodos.
 
 **Storage (variedad justificada por necesidad real):**
-- **PostgreSQL** — bases independientes para la API de consulta y para el motor, con recursos propios. El reparto de entidades, la copia de consulta y su actualización se definirán en el ADR; no usar una base compartida para cumplir RNF-20.
-- **Object storage compatible con S3** (MinIO en local) — snapshot crudo e **inmutable** de cada corrida, para reproducción, revisión de cuarentenas y datos de ML.
-- **Redis** — cola de deltas con prioridad y control de rate limit por tienda, con persistencia y réplica.
+- **PostgreSQL**: bases independientes para la API de consulta y para el motor, con recursos propios. El reparto de entidades, la copia de consulta y su actualización se definirán en el ADR. No usar una base compartida para cumplir RNF-20.
+- **Object storage compatible con S3** (MinIO en local): snapshot crudo e **inmutable** de cada corrida, para reproducción, revisión de cuarentenas y datos de ML.
+- **Redis**: cola de deltas con prioridad y control de rate limit por tienda, con persistencia y réplica.
 
 *Matiz de diseño que vale un ADR:* las diferencias de inventario son **reconstruibles** como `estado vigente − último valor confirmado`. Las órdenes de stock cero de RF-47 requieren además persistir la intención de corte. Comparar las alternativas de cola contra RNF-06 completo: reconstrucción de inventario, recuperación de órdenes y tareas en curso, y cero trabajo vigente perdido ante los cierres abruptos definidos en PRD §4. La infraestructura que garantice esto queda pendiente de su ADR.
 
-**ADRs candidatos:** monolito modular vs. servicios separados; cola en Redis reconstruible vs. cola durable en Postgres; simulador propio vs. mocks o grabaciones de la API real; snapshots en object storage vs. en Postgres; lenguaje/framework de la API core y de los workers; estrategia de cálculo de deltas (diff completo vs. incremental).
+**ADRs candidatos:** monolito modular vs. servicios separados. Cola en Redis reconstruible vs. cola durable en Postgres. Simulador propio vs. mocks o grabaciones de la API real. Snapshots en object storage vs. en Postgres. Lenguaje/framework de la API core y de los workers. Estrategia de cálculo de deltas (diff completo vs. incremental).
 
-## Stack (PROPUESTO — confirmar y registrar en ADR)
+## Stack (PROPUESTO: confirmar y registrar en ADR)
 
-Provisional; no lo trates como cerrado.
+Provisional. No lo trates como cerrado.
 
-- **Frontend:** aplicación web; framework a confirmar (la interfaz es de formularios y tablas, no hay requerimiento gráfico).
-- **API core y workers:** a decidir por ADR (Python/FastAPI o Node son los candidatos razonables; el dominio es ingesta de datos y clientes HTTP).
+- **Frontend:** aplicación web. Framework a confirmar (la interfaz es de formularios y tablas, no hay requerimiento gráfico).
+- **API core y workers:** a decidir por ADR (Python/FastAPI o Node son los candidatos razonables, el dominio es ingesta de datos y clientes HTTP).
 - **PostgreSQL** · **object storage compatible S3 (MinIO en local)** · **Redis**.
 - **Orquestación local:** Docker Compose.
 - **Simulador de MercadoLibre:** servicio propio en el mismo compose.
@@ -187,15 +187,15 @@ Provisional; no lo trates como cerrado.
 - **README** siempre con instrucciones actualizadas para levantar todos los componentes localmente.
 - **`/adr`** (o `/docs/adr`): un archivo por decisión, formato compara-alternativas.
 - **Observabilidad de primera clase, no un agregado:** logging estructurado con **identificador de corrida trazable de punta a punta**, métricas por feed y por tienda, health checks por componente. Para el modelo (cuando exista), monitorear **salud del pipeline y distribución de predicciones**.
-- **Testing** desde el POC; que el CI corra build + tests, **incluidos los caminos de falla**.
-- **Config por entorno**; nada hardcodeado ni secreto en el código.
-- **Manejo de errores** explícito en las interfaces expuestas; control de acceso en los endpoints.
+- **Testing** desde el POC. Que el CI corra build + tests, **incluidos los caminos de falla**.
+- **Config por entorno**. Nada hardcodeado ni secreto en el código.
+- **Manejo de errores** explícito en las interfaces expuestas. Control de acceso en los endpoints.
 - **Partes mockeadas o simplificadas** están permitidas y esperadas en el POC, pero deben quedar identificadas en el README.
 - **Nomenclatura de requisitos:** referí siempre por ID (`RF-22`, `RNF-03`, `CU-04`, `S-02`) para que código, SRD y PRD sean rastreables entre sí.
 
 ## Comandos
 
-Pendiente — completar cuando exista el repo. Placeholder:
+Pendiente: completar cuando exista el repo. Placeholder:
 
 ```
 # make up          # levantar todo localmente (incluye el simulador)
@@ -210,28 +210,28 @@ Pendiente — completar cuando exista el repo. Placeholder:
 - Al proponer stack, arquitectura o herramientas, chequear la decisión contra las reglas duras (costo, levantable local, readiness cloud, repo liviano, cero credenciales) antes de sugerirla.
 - Al tomar una decisión estructural, escribir el ADR correspondiente en el mismo cambio, con alternativas comparadas.
 - Mantener actualizadas la sección "Comandos" de este archivo y el README a medida que aparezca código.
-- Los `.md` de `docs/prd/` son la fuente de verdad del alcance. Si el código se aparta, se corrige el código o se corrige el documento — pero no quedan en contradicción.
+- Los `.md` de `docs/prd/` son la fuente de verdad del alcance. Si el código se aparta, se corrige el código o se corrige el documento, pero no quedan en contradicción.
 
 ## Explícitamente fuera de alcance / rechazado
 
-- **Gestión de ventas, reservas, despacho y logística** — es el resto del sistema real (`ivo-monopoly`); este TP es solo inventario.
-- **Pricing** — el sistema nunca lee ni escribe precios.
-- **Creación de publicaciones** — se asume que la publicación existe; el sistema no la crea.
-- **Reparación de publicaciones muertas** — el sistema detecta y alerta; qué hacer es decisión humana, fuera del sistema.
+- **Gestión de ventas, reservas, despacho y logística**: es el resto del sistema real (`ivo-monopoly`). Este TP es solo inventario.
+- **Pricing**: el sistema nunca lee ni escribe precios.
+- **Creación de publicaciones**: se asume que la publicación existe. El sistema no la crea.
+- **Reparación de publicaciones muertas**: el sistema detecta y alerta. Qué hacer es decisión humana, fuera del sistema.
 - **Reparto o topeo de stock entre tiendas.**
 - **Gestión de inventario a nivel bodega** (ubicaciones, movimientos, conteos) y **reportería de negocio**.
-- **Historial completo de escrituras por SKU o publicación y portal de auditoría histórica** — recortados en el punto 4.B. Se conserva la información operativa de RF-30 y los registros técnicos necesarios para verificar las garantías del motor.
-- **Compensar lo que la fuente no ofrece** — si el feed no lo expone, el sistema no lo emula.
-- **Formatos de origen más allá de `.csv` y tabla PostgreSQL** — el contrato es deliberadamente cerrado. No agregues XML, JSON ni Excel sin decisión explícita (el padre acepta Excel por FTP; acá no).
-- **Publicaciones compartidas** — un MLX alimentado por varios proveedores a la vez, con stock por depósito. Existe en el padre, acá no: una publicación, un vínculo activo.
-- **Ingesta por streaming** — las fuentes son archivos y endpoints con frecuencia de minutos u horas; la ingesta es batch y re-ejecutable, y el mecanismo de eventos es interno (cola de deltas).
-- **El proyecto anterior (asistente 3D de amoblamiento, Amazon Berkeley Objects, CLIP/KNN, canvas 3D)** — abandonado. No lo retomes ni lo cites como contexto vigente.
+- **Historial completo de escrituras por SKU o publicación y portal de auditoría histórica**: recortados en el punto 4.B. Se conserva la información operativa de RF-30 y los registros técnicos necesarios para verificar las garantías del motor.
+- **Compensar lo que la fuente no ofrece**: si el feed no lo expone, el sistema no lo emula.
+- **Formatos de origen más allá de `.csv` y tabla PostgreSQL**: el contrato es deliberadamente cerrado. No agregues XML, JSON ni Excel sin decisión explícita (el padre acepta Excel por FTP, acá no).
+- **Publicaciones compartidas**: un MLX alimentado por varios proveedores a la vez, con stock por depósito. Existe en el padre, acá no: una publicación, un vínculo activo.
+- **Ingesta por streaming**: las fuentes son archivos y endpoints con frecuencia de minutos u horas. La ingesta es batch y re-ejecutable, y el mecanismo de eventos es interno (cola de deltas).
+- **El proyecto anterior (asistente 3D de amoblamiento, Amazon Berkeley Objects, CLIP/KNN, canvas 3D)**: abandonado. No lo retomes ni lo cites como contexto vigente.
 
 ## Limitaciones conocidas (ser honesto en docs y defensa)
 
 - **El lado del marketplace está simulado.** La integración real queda validada por contrato, no por uso en producción.
 - **El catálogo de publicaciones es sintético.** Los SKU se muestrean del feed real, pero los atributos de publicación no son reales.
 - **Sin gestión de ventas no se puede cerrar el lazo.** El sistema no sabe si hubo sobreventa: solo puede demostrar que propagó a tiempo. La métrica que importa en el negocio (cancelaciones) queda fuera de lo que este sistema mide.
-- **La consistencia es eventual por diseño.** Hay una ventana entre la venta en la fuente y su reflejo en la tienda. El sistema la acota y la mide; no la elimina.
-- **La escala real del dominio excede la del MVP.** Las fuentes llegan a millones de SKU; el MVP demuestra el mecanismo con **100.000 vínculos activos totales en 2 tiendas simuladas, 50.000 por tienda**, e identifica los cuellos de botella. El perfil de deltas por corrida todavía debe acordarse; más tiendas requieren volver a medir.
+- **La consistencia es eventual por diseño.** Hay una ventana entre la venta en la fuente y su reflejo en la tienda. El sistema la acota y la mide. No la elimina.
+- **La escala real del dominio excede la del MVP.** Las fuentes llegan a millones de SKU. El MVP demuestra el mecanismo con **100.000 vínculos activos totales en 2 tiendas simuladas, 50.000 por tienda**, e identifica los cuellos de botella. El perfil de deltas por corrida todavía debe acordarse. Más tiendas requieren volver a medir.
 - **Un solo formato de origen probado a fondo:** solo el `.csv` se ejercita contra una fuente real.
