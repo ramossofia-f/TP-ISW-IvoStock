@@ -88,6 +88,6 @@ La decisión fija el pipeline en dos procesos separados y acoplados solo por el 
 ## Más información
 
 * Relacionado con PRD §3 (RF-20 a RF-23, RF-45 a RF-48), §4 (RNF-01, RNF-02, RNF-03, RNF-06, RNF-14, RNF-19), S-07, S-08, R-01.
-* Esta decisión **no** resuelve dónde vive la cola de deltas: que la cola sea reconstruible es un insumo de ese ADR (cola en Redis reconstruible vs. cola durable en PostgreSQL), no su conclusión.
+* Esta decisión **no** resuelve dónde vive la cola de deltas: que la cola sea reconstruible es un insumo de ese ADR (cola en Redis reconstruible vs. cola durable en PostgreSQL), no su conclusión. Se resolvió en ADR-0006: cola durable en PostgreSQL.
 * Tampoco fija el algoritmo de comparación (diff completo en memoria vs. comparación incremental en base). Eso se decide con datos de RNF-02 durante el POC.
 * La opción A sobrevive como **reconciliación periódica** de baja prioridad, si el desfase por escrituras externas resulta medible. No es la vía de propagación.
