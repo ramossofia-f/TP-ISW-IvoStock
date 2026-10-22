@@ -7,7 +7,7 @@
 - Maria Saráchaga (https://github.com/mariasarachaga)
 - Francisco Ortega (https://github.com/fortega00)
 
-**Estado:** Entrega 1 aprobada. Revisión del PRD y del roadmap en curso según la devolución de la cátedra.
+**Estado:** Entrega 1 aprobada -> la devolución de la cátedra está incorporada al PRD, al roadmap y a los ADRs. Queda pendiente el ADR de infraestructura.
 
 Ivo Stock sincroniza inventario entre N fuentes de stock y K tiendas de MercadoLibre. El objetivo es que sumar un proveedor o una tienda sea una operación de configuración y no el desarrollo de un script nuevo por cada par proveedor–tienda.
 
