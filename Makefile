@@ -1,10 +1,10 @@
 .PHONY: up down test
 
 up:
-	docker-compose up -d
+	docker compose up -d
 
 down:
-	docker-compose down
+	docker compose down
 
 test:
-	pytest tests/
+	PYTHONPATH=. pytest tests/
