@@ -7,4 +7,4 @@ down:
 	docker compose down
 
 test:
-	pytest tests/
+	PYTHONPATH=. pytest tests/
