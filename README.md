@@ -31,3 +31,42 @@ Las llamadas a MercadoLibre mantienen un máximo de **60 req/min por tienda**: *
 - Validación de proyecto: registro histórico de la propuesta enviada a la cátedra. El alcance vigente está en el PRD.
 
 Video: https://www.youtube.com/watch?v=zP0HYAmsSoY
+
+#### Entrega 2 (POC, en construcción)
+
+**Requisitos:** Docker con Docker Compose y Python 3.12 o superior.
+
+```
+cp .env.example .env        # valores de desarrollo. Para Celesa, completar CELESA_FEED_URL
+make up                     # PostgreSQL, MinIO y Redis
+python -m venv .venv && source .venv/bin/activate
+make install
+make init-db                # esquema de la base del motor
+make test                   # tests (los de integración necesitan IVOSTOCK_TEST_DATABASE_URL)
+```
+
+**Ingesta (P2).** El POC no tiene interfaz gráfica: se opera por línea de comandos.
+
+```
+make gen-feed ARGS="--salida data/feeds/demo.csv --skus 5000"   # feed sintético, sin credenciales
+make probar PROVEEDOR=demo      # preview de las primeras filas y fetch de prueba: valida el proveedor
+make ingest PROVEEDOR=demo      # una corrida: snapshot en MinIO, normalización, cuarentena, estado vigente
+make corridas PROVEEDOR=demo    # últimas corridas con D, Z, coeficiente y motivo de cuarentena
+```
+
+Para provocar una cuarentena, generar un feed truncado o con ceros en masa a partir del anterior y volver a correr:
+
+```
+make gen-feed ARGS="--base data/feeds/demo.csv --salida data/feeds/demo.csv --truncar 0.3"
+make ingest PROVEEDOR=demo
+```
+
+Con `PROVEEDOR=celesa` se usa el feed real, que requiere la variable `CELESA_FEED_URL` en `.env`. Los snapshots y feeds generados no se versionan.
+
+**Partes simplificadas en el POC:**
+
+- No hay interfaz gráfica ni API de usuario: llegan en M1. Los proveedores se configuran con archivos en `config/proveedores/`.
+- La ingesta se dispara a mano, no por una frecuencia programada (RF-10, M1).
+- El esquema de la base se crea con un archivo SQL (`src/ivostock/db/esquema.sql`). Las migraciones con Alembic llegan cuando el esquema empiece a cambiar.
+- El marketplace está simulado (ADR-0001). El simulador se construye en P1.
+- `src/ivostock/comparador/` es un borrador que se reescribe en P3 contra el estado vigente (ADR-0002).

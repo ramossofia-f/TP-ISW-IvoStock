@@ -25,7 +25,7 @@ TP grupal (2-3 personas) que simula un sistema de software real en producción, 
 
 **Entrega 1 aprobada. Devolución incorporada en documentos** al 2026-10-22. Los ADRs de infraestructura (0004 a 0012) integran la propuesta de Francisco (rama `docs/adrs-infraestructura`, que no se mergea). Ante el conflicto se eligió la cola en PostgreSQL y la replicación lógica por ser las opciones con menos piezas. El usuario pide discutir cada punto y actualizar los documentos después de acordar el cambio. El video de la Entrega 1 se conserva.
 
-- **Todavía no hay código de la aplicación.** El repo contiene documentación y un script de análisis de feeds.
+- **Código:** P0 (compose, CI) y P2 (ingesta con cuarentena, generador de feeds) en `src/ivostock/`. El comparador de `src/ivostock/comparador/` es un borrador de María que no sigue ADR-0002 y se reescribe en P3. P1 (simulador) todavía no existe.
 - `scripts/analizar_feed.py`: caracteriza un snapshot de feed (volumen, encoding, calidad de parseo, distribución de stock, proyección de almacenamiento) y, con dos snapshots, calcula `D`, `Z` y el coeficiente de CU-07. Es la herramienta con la que se midió el feed real para §12 del PRD. El script ya está versionado (commit `ba6dae6`). **Los snapshots no se versionan** (`*.csv` está gitigneado): se pasan por parámetro.
 - **El repo ya está inicializado** y con historia. La consigna exige que sea privado y compartido con la cátedra desde el inicio, con commits que reflejen la contribución real de cada integrante.
 - `docs/prd/validacion.md`: la propuesta de 1-2 carillas presentada a la cátedra. **Es un registro histórico de lo que se entregó, no la fuente de verdad vigente**: no lo edites retroactivamente. Cuando el PRD se aparta de él, gana el PRD, y la divergencia se justifica ahí. Divergencias conocidas al 2026-10-21: el volumen del feed (mide ~255.000 SKU, no ~650.000), el componente de ML (ya decidido, ADR-0003), el estado de una tienda con la cola atrasada (ahora *atrasada*, que sigue drenando, en lugar de *degradada*) y el recorte del historial completo de escrituras a información operativa (PRD §5).
@@ -203,15 +203,21 @@ El techo total de 3.600 llamadas/hora equivale a 21.600 en 6 horas y 43.200 en 1
 
 ## Comandos
 
-Pendiente: completar cuando exista el repo. Placeholder:
+Python 3.12+ con el paquete instalado en un entorno virtual (`make install`). Configuración en `.env` (copiar `.env.example`).
 
 ```
-# make up          # levantar todo localmente (incluye el simulador)
-# make test        # correr tests
-# make ingest      # ejecutar una corrida de ingesta
-# make gen-catalog # generar catálogo sintético para el simulador
-# make gen-feed    # generar un feed sintético
+make up          # PostgreSQL, MinIO y Redis (docker compose)
+make install     # pip install -e ".[dev]"
+make lint        # ruff check src tests
+make test        # pytest. Integración con IVOSTOCK_TEST_DATABASE_URL apuntando a una base descartable
+make init-db     # crea el esquema de la base del motor
+make gen-feed ARGS="--salida data/feeds/demo.csv --skus 5000"   # feed sintético (RF-37)
+make probar PROVEEDOR=demo     # preview y fetch de prueba, valida el proveedor (RF-06, RF-07)
+make ingest PROVEEDOR=demo     # una corrida de ingesta (RF-20 a RF-22, RF-28)
+make corridas PROVEEDOR=demo   # últimas corridas con D, Z, p y motivo
 ```
+
+Pendientes: simulador (P1), comparador, cola y publicación (P3), `make demo` (P5).
 
 ## Cómo trabajar acá
 
