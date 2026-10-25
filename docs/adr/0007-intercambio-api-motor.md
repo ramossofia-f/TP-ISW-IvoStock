@@ -4,7 +4,7 @@
 
 RNF-20 exige que la API de consulta y el motor tengan **bases de datos y CPU separados**, sin llamadas directas entre ambos. Con la interfaz y su API detenidas, el motor sigue sincronizando las integraciones ya configuradas. Con el motor detenido, la interfaz consulta su copia del último estado, con su fecha, y acepta solicitudes que quedan pendientes hasta que el motor vuelve (PRD §2.3). Hay que decidir cómo viajan la configuración y las solicitudes hacia el motor, y el estado operativo hacia la API.
 
-La copia de consulta de la API también tiene que soportar RNF-21: 1.000 usuarios a una consulta por segundo, con p95 menor a 2 segundos, sin cargar la base del motor.
+La copia de consulta de la API también tiene que soportar RNF-21: 50 usuarios a una consulta por segundo, con p95 menor a 2 segundos, sin cargar la base del motor.
 
 Esta decisión se implementa en M1, cuando se construyen la interfaz y su API. El POC se opera por línea de comandos directamente sobre el motor.
 

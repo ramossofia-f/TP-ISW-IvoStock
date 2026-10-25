@@ -48,7 +48,7 @@ No asumas que hay un stack corriendo hasta que la sección "Comandos" lo confirm
 - **Fallas externas:** caídas de proveedores o MercadoLibre se registran aparte y no se imputan a RNF-19. El manejo de degradación de RNF-05 se mantiene. Las fallas de almacenes y componentes propios sí cuentan.
 - **Verificación:** protocolo en PRD §4. Pruebas de conservación y recuperación en P3, independencia en P5 y medición de 24 horas en M8. Son compromisos de diseño pendientes de implementación, no resultados obtenidos.
 
-**Punto 3 en revisión:** el usuario acordó **1.000 usuarios activos a una consulta por segundo cada uno, p95 menor a 2 segundos** (RNF-21), y **60 solicitudes por minuto por usuario** para la API detrás de la interfaz (RNF-22). La cuota suma sesiones y clientes y excluye archivos estáticos. Ante un 429 con `Retry-After`, la interfaz conserva la pantalla y muestra **«Demasiadas solicitudes. Reintentá en X segundos»**. La capacidad se prueba durante 30 minutos con el motor activo y sus bases y CPU separados. Son objetivos pendientes de implementación y medición.
+**Punto 3 en revisión:** RNF-21 quedó en **50 usuarios activos a una consulta por segundo cada uno, p95 menor a 2 segundos** (se bajó de 1.000 el 2026-10-25 por desproporcionado, según la observación de alcance excesivo). **60 solicitudes por minuto por usuario** (RNF-22) quedó como deseable, junto con RF-55 (*Could*). La cuota suma sesiones y clientes y excluye archivos estáticos. Ante un 429 con `Retry-After`, la interfaz conserva la pantalla y muestra **«Demasiadas solicitudes. Reintentá en X segundos»**. La capacidad se prueba durante 30 minutos con el motor activo y sus bases y CPU separados. Son objetivos pendientes de implementación y medición.
 
 El usuario confirmó que **cuenta significa usuario de Ivo Stock** y que **vinculación es un lote para un par proveedor–tienda**. RF-55 todavía fija un alta o baja en conjunto y un lote por usuario y día. Su simplificación sigue en discusión. El usuario propone hasta tres trabajos masivos de alta/baja sin fecha de finalización comprometida, retirando la propuesta de p95 de 72 horas. Quedan pendientes el alcance global o por usuario del cupo, si incluye trabajos en ejecución, las vinculaciones por lote y la delimitación de RNF-01. La cuota diaria no se elimina hasta acordar su reemplazo. Tampoco se ha acordado la propuesta de una única operación masiva en ejecución. La distribución de ráfagas de la cuota propia sigue pendiente.
 
@@ -77,7 +77,7 @@ El usuario confirmó que **cuenta significa usuario de Ivo Stock** y que **vincu
 - **R-01:** P3 tiene criterio medible (cero 429 por exceso propio, ≥ 95 % del cupo asignado, drenado dentro de ±10 % y espera acotada de la prioridad baja). El perfil de deltas sale de `D`/`Z` sobre corridas reales en P2.
 - Los títulos de plantilla de los ADRs se tradujeron al español.
 
-Sigue pendiente el cierre de RF-55. La infraestructura quedó en ADR-0004 a ADR-0007 (RabbitMQ se comparó y se descartó en ADR-0006 y ADR-0007).
+RF-55 pasó a *Could* y RNF-22 a deseable, primeros en el orden de recorte. Se mantienen RNF-20 y RF-48 porque sostienen la disponibilidad pedida y el riesgo R-01. La infraestructura quedó en ADR-0004 a ADR-0007 (RabbitMQ se comparó y se descartó en ADR-0006 y ADR-0007).
 
 ## Entregas
 

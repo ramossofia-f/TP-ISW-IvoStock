@@ -391,8 +391,8 @@ El tablero muestra latencia, dead letters y estados de excepción.
 * Imágenes construidas en CI.
 * Configuración por entorno.
 * Despliegue efímero en free tier.
-* Cuota de la API detrás de la interfaz: 60 solicitudes por minuto por usuario, con rechazo 429 explícito al excederla.
-* Cuota diaria por usuario de Ivo Stock: un alta o baja de proveedor o tienda y un lote de vinculación, con contadores compartidos entre sesiones y reintentos de la misma operación sin consumo duplicado.
+* *Deseable (Could):* cuota de la API detrás de la interfaz: 60 solicitudes por minuto por usuario, con rechazo 429 explícito al excederla.
+* *Deseable (Could):* cuota diaria por usuario de Ivo Stock: un alta o baja de proveedor o tienda y un lote de vinculación, con contadores compartidos entre sesiones y reintentos de la misma operación sin consumo duplicado.
 
 **Requisitos**
 
@@ -421,8 +421,8 @@ M1.
 * Medición de RNF-14.
 * Medición de RNF-13 con **100.000 vínculos activos totales en 2 tiendas simuladas, 50.000 por tienda**, registrando el perfil de carga acordado y los recursos de ejecución.
 * Medición de RNF-19: prueba continua de 24 horas, con al menos 99 % de disponibilidad por separado para la interfaz con su API y para el motor, según las sondas externas de PRD §4.
-* Medición de RNF-21: 1.000 usuarios a una consulta por segundo cada uno durante 30 minutos, con p95 menor a 2 segundos y el motor activo, según PRD §4. La evidencia documenta bases y CPU separados y comprueba la coexistencia con RNF-01 y RNF-02 bajo el perfil de sincronización acordado.
-* Verificación de la cuota propia de RNF-22 y del tratamiento separado de 429 propios y de MercadoLibre.
+* Medición de RNF-21: 50 usuarios a una consulta por segundo cada uno durante 30 minutos, con p95 menor a 2 segundos y el motor activo, según PRD §4. La evidencia documenta bases y CPU separados y comprueba la coexistencia con RNF-01 y RNF-02 bajo el perfil de sincronización acordado.
+* Si se implementó RNF-22, verificación de la cuota propia y del tratamiento separado de 429 propios y de MercadoLibre.
 * Evidencia de las pruebas de conservación, recuperación e independencia de RNF-06, RNF-19 y RNF-20.
 * Verificación de los **6 criterios de éxito vigentes**. El criterio 7 y CU-09 fueron retirados al recortar el historial completo, según PRD §5.
 * SRD completo con Machine Learning.
@@ -502,14 +502,15 @@ El POC ya se plantea sin interfaz gráfica. Si al 26 de octubre P4 no está cerr
 
 Si el tiempo disponible no alcanza, el orden de recorte previsto desde lo primero que se elimina hasta lo último es el siguiente:
 
-1. RF-34
-2. RF-41 y RNF-16
-3. RF-10
-4. RF-09
-5. RF-42
-6. RF-32
-7. RF-14
-8. RF-44
+1. RF-55 y RNF-22
+2. RF-34
+3. RF-41 y RNF-16
+4. RF-10
+5. RF-09
+6. RF-42
+7. RF-32
+8. RF-14
+9. RF-44
 
 RF-40 no forma parte de esta lista porque es el único requisito que verifica INV-3. Recortarlo dejaría una invariante heredada sin demostrar.
 
