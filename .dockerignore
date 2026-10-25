@@ -1,0 +1,14 @@
+.git
+.venv
+.cache
+.env*
+data
+snapshots
+sessions
+.claude
+docs/consignas
+__pycache__
+.pytest_cache
+.ruff_cache
+dist
+build

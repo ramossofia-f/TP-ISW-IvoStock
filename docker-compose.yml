@@ -1,13 +1,115 @@
+x-app: &app
+  build: .
+  env_file: .env
+  restart: unless-stopped
+  depends_on:
+    init:
+      condition: service_completed_successfully
+
 services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: ivostock
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Ejecutar python scripts/configurar.py}
       POSTGRES_DB: ivostock
-    ports:
-      - "5432:5432"
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ivostock -d ivostock"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  minio:
+    build:
+      context: .
+      dockerfile: docker/minio.Dockerfile
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+    volumes: ["minio-data:/data"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  init:
+    build: .
+    env_file: .env
+    command: ["python", "scripts/inicializar.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+  simulator:
+    <<: *app
+    command: ["uvicorn", "ivostock.simulator:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports: ["127.0.0.1:8001:8001"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8001/health').raise_for_status()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    <<: *app
+    command: ["uvicorn", "ivostock.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  ingest:
+    <<: *app
+    command: ["python", "-m", "ivostock.worker", "ingest"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "ivostock.health", "ingest"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  compare:
+    <<: *app
+    command: ["python", "-m", "ivostock.worker", "compare"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "ivostock.health", "compare"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  publish:
+    <<: *app
+    command: ["python", "-m", "ivostock.worker", "publish"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "ivostock.health", "publish"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  feeds:
+    build: .
+    command: ["python", "-m", "http.server", "8080", "--directory", "/feeds"]
+    volumes: ["./data/feeds:/feeds:ro"]
+    ports: ["127.0.0.1:8080:8080"]
+    restart: unless-stopped
+  cli:
+    <<: *app
+    profiles: ["tools"]
+    command: ["ivostock", "--help"]
+    volumes: ["./data:/work/data"]
+  tests:
+    <<: *app
+    profiles: ["test"]
+    restart: "no"
+    environment:
+      RUN_INTEGRATION: "1"
+    command: ["python", "-m", "pytest", "-q"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:
+  minio-data:
