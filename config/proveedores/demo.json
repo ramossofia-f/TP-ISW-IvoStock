@@ -1,0 +1,9 @@
+{
+  "id": "demo",
+  "separador": ";",
+  "encabezado": false,
+  "col_sku": 0,
+  "col_stock": 1,
+  "prioridad": "media",
+  "url": "data/feeds/demo.csv"
+}

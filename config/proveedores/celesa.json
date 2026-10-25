@@ -1,0 +1,9 @@
+{
+  "id": "celesa",
+  "separador": ";",
+  "encabezado": false,
+  "col_sku": 0,
+  "col_stock": 1,
+  "prioridad": "media",
+  "url_env": "CELESA_FEED_URL"
+}
