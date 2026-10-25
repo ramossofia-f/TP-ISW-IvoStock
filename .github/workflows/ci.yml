@@ -1,15 +1,33 @@
 name: CI
 on: [push, pull_request]
+
 jobs:
-  test:
+  checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.12'
-      - name: Install dependencies
-        run: pip install fastapi uvicorn pytest
-      - name: Run tests
-        run: make test
+          version: "0.10.4"
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run pytest -q -m "not integration"
+      - run: uv run python scripts/verificar_documentacion.py
+      - run: uv run python scripts/verificar_secretos.py
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/configurar.py
+      - run: docker compose --profile test run --build --rm tests
+      - name: Diagnóstico de servicios
+        if: failure()
+        run: docker compose logs --tail=100
+      - name: Apagar servicios conservando datos
+        if: always()
+        run: docker compose down
