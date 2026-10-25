@@ -7,7 +7,7 @@
 | **Estado** | Entrega 1 aprobada. Incorporación de la devolución de la cátedra |
 | **Equipo** | María Saráchaga, Francisco Ortega, Sofía Ramos |
 | **Documento anterior** | [validacion.md](validacion.md): propuesta presentada a la cátedra |
-| **Decisiones registradas** | [ADR-0001](../adr/0001-marketplace-simulado-detras-de-interfaz.md) · [ADR-0002](../adr/0002-propagacion-por-deltas.md) · [ADR-0003](../adr/0003-componente-ml-deteccion-anomalias.md) · [ADR-0004](../adr/0004-lenguaje-y-framework.md) · [ADR-0005](../adr/0005-almacenamiento.md) · [ADR-0006](../adr/0006-cola-de-tareas-en-postgresql.md) · [ADR-0007](../adr/0007-intercambio-api-motor.md) |
+| **Decisiones registradas** | [ADR-0001](../adr/0001-marketplace-simulado-detras-de-interfaz.md) · [ADR-0002](../adr/0002-propagacion-por-deltas.md) · [ADR-0003](../adr/0003-componente-ml-deteccion-anomalias.md) · [ADR-0004](../adr/0004-lenguaje-y-framework.md) · [ADR-0005](../adr/0005-almacenamiento.md) · [ADR-0006](../adr/0006-cola-de-tareas-en-postgresql.md) · [ADR-0007](../adr/0007-intercambio-api-motor.md) · [ADR-0008](../adr/0008-arquitectura-servicios-con-cola.md) · [ADR-0009](../adr/0009-docker-compose.md) · [ADR-0010](../adr/0010-ci-cd.md) · [ADR-0011](../adr/0011-observabilidad.md) · [ADR-0012](../adr/0012-generadores-sinteticos.md) · [índice](../adr/README.md) |
 
 ---
 

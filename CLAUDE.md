@@ -23,14 +23,14 @@ TP grupal (2-3 personas) que simula un sistema de software real en producción, 
 - **Divergencias deliberadas:** sin publicaciones compartidas, sin roles, solo dos formatos de origen, y **100.000 vínculos activos totales demostrados en 2 tiendas simuladas, 50.000 por tienda**, contra los 10⁸ que exige el original. **El PRD no nombra a Ivo Monopoly**: lo llama "el sistema original" y no entra en su vocabulario interno (bodega, vitrina, Buyer, ruta). Mantené ese criterio al editarlo.
 ## Estado actual del repositorio
 
-**Entrega 1 aprobada. Devolución incorporada en documentos** al 2026-10-22. Los ADRs de infraestructura (0004 a 0007) están escritos y pendientes de revisión del equipo. El usuario pide discutir cada punto y actualizar los documentos después de acordar el cambio. El video de la Entrega 1 se conserva.
+**Entrega 1 aprobada. Devolución incorporada en documentos** al 2026-10-22. Los ADRs de infraestructura (0004 a 0012) integran la propuesta de Francisco (rama `docs/adrs-infraestructura`, que no se mergea). Ante el conflicto se eligió la cola en PostgreSQL y la replicación lógica por ser las opciones con menos piezas. El usuario pide discutir cada punto y actualizar los documentos después de acordar el cambio. El video de la Entrega 1 se conserva.
 
 - **Todavía no hay código de la aplicación.** El repo contiene documentación y un script de análisis de feeds.
 - `scripts/analizar_feed.py`: caracteriza un snapshot de feed (volumen, encoding, calidad de parseo, distribución de stock, proyección de almacenamiento) y, con dos snapshots, calcula `D`, `Z` y el coeficiente de CU-07. Es la herramienta con la que se midió el feed real para §12 del PRD. El script ya está versionado (commit `ba6dae6`). **Los snapshots no se versionan** (`*.csv` está gitigneado): se pasan por parámetro.
 - **El repo ya está inicializado** y con historia. La consigna exige que sea privado y compartido con la cátedra desde el inicio, con commits que reflejen la contribución real de cada integrante.
 - `docs/prd/validacion.md`: la propuesta de 1-2 carillas presentada a la cátedra. **Es un registro histórico de lo que se entregó, no la fuente de verdad vigente**: no lo edites retroactivamente. Cuando el PRD se aparta de él, gana el PRD, y la divergencia se justifica ahí. Divergencias conocidas al 2026-10-21: el volumen del feed (mide ~255.000 SKU, no ~650.000), el componente de ML (ya decidido, ADR-0003), el estado de una tienda con la cola atrasada (ahora *atrasada*, que sigue drenando, en lugar de *degradada*) y el recorte del historial completo de escrituras a información operativa (PRD §5).
 - `docs/prd/PRD.md`: PRD **versión 1.1, revisión posterior a la Entrega 1 en curso**: relación con el proyecto padre y vocabulario equivalente, casos de uso CU-01…CU-08 (**CU-09 retirado**), requisitos funcionales RF-01…RF-55 con MoSCoW y asignados a POC o MVP (**no existe RF-02**, ver la nota del propio PRD, **tampoco RF-54**, descartado antes de existir), RNF-01…RNF-22 con objetivo verificable (**no existe RNF-15**), **6 criterios de éxito vigentes (criterio 7 retirado)**, supuestos S-01…S-09 con consecuencia y plan B separados, limitaciones, riesgos R-01…R-05 con ROAM, roadmap, glosario y **§12 fuentes de datos y viabilidad** (con el feed de Celesa medido sobre un snapshot real).
-- `docs/adr/`: ADR-0001 marketplace simulado detrás de una interfaz única, ADR-0002 propagación por deltas contra el estado vigente, ADR-0003 componente de ML. Formato MADR, con alternativas comparadas.
+- `docs/adr/`: ADR-0001 a ADR-0012, con índice en `docs/adr/README.md`. 0001 marketplace simulado, 0002 deltas, 0003 ML, 0004 Python y FastAPI, 0005 almacenamiento, 0006 cola en PostgreSQL, 0007 intercambio API–motor y topología de dos servidores, 0008 arquitectura de servicios con cola, 0009 Docker Compose, 0010 CI/CD con GitHub Actions, 0011 observabilidad, 0012 generadores sintéticos. Formato con títulos en español, sin encabezado de metadatos, con alternativas comparadas.
 - `docs/prd/obs.md`: observaciones del usuario sobre la validación.
 - `docs/consignas/consigna-completa.md`: enunciado oficial del TP.
 - `docs/consignas/consigna-resumida.md`: versión condensada. Usar esta para consultas rápidas.
@@ -182,7 +182,7 @@ El techo total de 3.600 llamadas/hora equivale a 21.600 en 6 horas y 43.200 en 1
 
 **ADRs pendientes:** framework del frontend (M1) y estrategia de cálculo de deltas (diff completo vs. incremental, con datos de RNF-02 en P2).
 
-## Stack (decidido en ADR-0004 a ADR-0007, pendiente de revisión del equipo)
+## Stack (decidido en ADR-0004 a ADR-0012)
 
 - **API core, workers, simulador, generadores y ML:** **Python 3.12 con FastAPI** (ADR-0004). Bibliotecas de base: Pydantic, SQLAlchemy con Alembic, httpx, pytest, ruff.
 - **Frontend:** framework a decidir en M1 (el POC no tiene interfaz gráfica).

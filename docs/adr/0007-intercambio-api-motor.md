@@ -21,6 +21,7 @@ Esta decisión se implementa en M1, cuando se construyen la interfaz y su API. E
 * **Opción B**: Una base compartida entre la API y el motor.
 * **Opción C**: Un broker de mensajes (RabbitMQ) entre ambos, con tablas de salida en cada base para publicar de forma confiable.
 * **Opción D**: Replicación lógica de PostgreSQL en los dos sentidos, sobre tablas dedicadas al intercambio.
+* **Opción E**: Tablas de salida y de entrada en cada base, con los mensajes transportados por un Redis dedicado al intercambio.
 
 ## Decisión
 
@@ -30,6 +31,13 @@ Opción elegida: "Opción D: replicación lógica de PostgreSQL", porque da inte
 * **Del motor a la API:** el motor publica tablas de consulta con el estado operativo por vínculo, las fallas, las corridas y el resultado de cada solicitud, con su fecha de actualización. La base de la API se suscribe y las consultas de la interfaz leen solo esa copia.
 * **Si un lado está detenido,** el otro sigue trabajando con lo que tiene. Al volver, la suscripción recupera lo que se acumuló mientras tanto.
 * **Las tablas de intercambio son un contrato:** son distintas de las tablas internas de cada lado, para que un cambio interno no rompa al otro.
+
+**Topología.** La API y el motor corren en dos servidores o máquinas virtuales, con CPU asignada por separado:
+
+* **Servidor de la API:** frontend, API core y su PostgreSQL, con usuarios, configuración deseada, solicitudes y la copia de consulta del estado con su fecha.
+* **Servidor del motor:** workers, simulador en el entorno de demostración, su PostgreSQL, MinIO y Redis. Guarda la configuración aplicada, las credenciales cifradas, el catálogo, el estado vigente, los vínculos, las tareas y las intenciones de corte. Valida las invariantes y decide qué se ejecuta.
+
+En local, `docker-compose` levanta los dos conjuntos en una sola máquina, con servicios, redes y bases separados. Eso sirve para desarrollar, pero no demuestra la separación de CPU de RNF-20: esa evidencia se documenta con la topología de dos servidores.
 
 ### Consecuencias
 
@@ -69,6 +77,13 @@ Opción elegida: "Opción D: replicación lógica de PostgreSQL", porque da inte
 * A favor, porque es nativa, durable y no suma servicios.
 * A favor, porque cada lado conserva su base y su CPU.
 * En contra, porque acopla los dos lados a través del esquema de las tablas de intercambio, y exige cuidar su evolución.
+
+### Opción E: Tablas de salida y entrada sobre un Redis de intercambio
+
+* A favor, porque cada lado guarda el cambio y el mensaje en la misma transacción local, y reenvía hasta que el otro confirma que lo guardó.
+* A favor, porque el consumidor registra cada mensaje con su identificador: los duplicados no repiten efectos y las versiones por entidad descartan mensajes viejos.
+* En contra, porque suma un tercer Redis a operar, con su propia persistencia, y el proceso de reenvío y confirmación hay que programarlo en los dos lados.
+* En contra, porque resuelve con código propio lo que la replicación lógica ya garantiza. La idea de versiones por entidad se conserva en las tablas de intercambio de la opción D.
 
 ## Más información
 

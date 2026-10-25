@@ -25,6 +25,7 @@ Los requisitos que tiene que cumplir son exigentes y específicos:
 * **Opción B**: Tabla de tareas en la base PostgreSQL del motor, tomadas con `SELECT ... FOR UPDATE SKIP LOCKED`.
 * **Opción C**: RabbitMQ con colas de prioridad.
 * **Opción D**: Redis Streams con grupos de consumidores.
+* **Opción E**: Redis decide el orden de las tareas y PostgreSQL conserva el trabajo y las intenciones de corte.
 
 ## Decisión
 
@@ -33,6 +34,7 @@ Opción elegida: "Opción B: cola durable en PostgreSQL", porque es la única en
 * **Reemplazo por vínculo (RF-46):** un índice único sobre las tareas pendientes de cada vínculo. Encolar es un `INSERT ... ON CONFLICT DO UPDATE` que cambia el valor deseado y conserva la fecha original de encolado, y por lo tanto la posición.
 * **Prioridad con envejecimiento (RF-23):** el worker toma la siguiente tarea ordenando por una prioridad efectiva que combina la prioridad del proveedor y el tiempo de espera. La fórmula se especifica en el SRD.
 * **Tareas en curso:** una tarea tomada queda marcada con un vencimiento. Si el worker muere, la tarea vuelve a estar disponible al vencer, y el reintento es idempotente (RNF-04).
+* **Versiones por vínculo:** cada tarea lleva una versión que crece con cada reemplazo. El worker confirma el stock solo si la versión que escribió sigue siendo la vigente, de modo que la confirmación de un intento viejo no borra una tarea nueva pendiente. Las escrituras de un mismo vínculo no se ejecutan en paralelo, para que un reintento viejo no pise un valor nuevo.
 * **Durabilidad (RNF-06):** las tareas, las órdenes de stock cero, el estado operativo y las dead letters se escriben en la misma base y en la misma transacción. La caída del almacén de la cola es la caída de PostgreSQL, que conserva lo confirmado por su registro de escritura anticipada.
 * **Aviso al comparador (RF-45):** la ingesta registra la corrida aceptada en la misma transacción que actualiza el estado vigente, y el comparador la toma de esa tabla. Para no consultar en un bucle, la base avisa con `LISTEN/NOTIFY`, y la tabla sigue siendo la fuente de verdad si el aviso se pierde.
 
@@ -79,6 +81,13 @@ Opción elegida: "Opción B: cola durable en PostgreSQL", porque es la única en
 * A favor, porque da entrega al menos una vez y seguimiento de mensajes en curso.
 * En contra, porque un stream es un registro que solo crece: no tiene prioridad ni reemplazo por vínculo.
 * En contra, porque comparte las limitaciones de durabilidad de la opción A.
+
+### Opción E: Redis para ordenar, PostgreSQL para conservar
+
+* A favor, porque perder Redis no pierde trabajo: PostgreSQL guarda tareas, versiones e intenciones de corte, y la cola se reconstruye desde ahí.
+* A favor, porque Redis resuelve el orden por prioridad con estructuras propias.
+* En contra, porque hay dos lugares con el estado de la cola que hay que reconciliar después de cada caída, y el reemplazo por vínculo tiene que mantenerse igual en los dos.
+* En contra, porque PostgreSQL ya resuelve el orden con una consulta ordenada, con el caudal que permite la cuota. Se puede reconsiderar si las mediciones del POC muestran que la selección de tareas en PostgreSQL es un cuello de botella.
 
 ## Más información
 

@@ -31,7 +31,7 @@ Opción elegida: "Opción B: PostgreSQL, almacenamiento de objetos y Redis", por
 
 * **PostgreSQL** guarda configuración, estado vigente, vínculos, estado operativo, tareas y dead letters. Las invariantes se expresan como restricciones: INV-1 es un índice único parcial sobre las publicaciones con vínculo activo, y el reemplazo de RF-46 es un índice único sobre las tareas pendientes de cada vínculo (ADR-0006). Hay dos bases separadas, una para el motor y otra para la API de consulta, por RNF-20 (ADR-0007).
 * **El almacenamiento de objetos** guarda cada snapshot con una clave que identifica proveedor y corrida, y nunca se sobrescribe. PostgreSQL guarda solo la referencia y el hash del contenido.
-* **Redis** guarda los contadores de cuota por tienda y por clase de trabajo, con operaciones atómicas y vencimiento automático. No guarda trabajo: si Redis se cae y pierde sus contadores, se recupera con contadores vacíos, y el peor caso es una ráfaga que MercadoLibre responde con 429, que el motor ya maneja con espera y reintento (RF-24). Ninguna tarea depende de Redis para no perderse.
+* **Redis** guarda los contadores de cuota por tienda y por clase de trabajo, con operaciones atómicas y vencimiento automático. No guarda trabajo. Si Redis se cae, los workers suspenden las llamadas a MercadoLibre y conservan las tareas en PostgreSQL. Al volver con los contadores vacíos, esperan una ventana completa de cuota (un minuto) antes de reanudar, para no exceder el límite con llamadas que ya se habían hecho. Si igual llega un 429, el motor lo maneja con espera y reintento (RF-24). Ninguna tarea depende de Redis para no perderse.
 
 ### Consecuencias
 
