@@ -1,4 +1,5 @@
-from src.ivostock.comparador.worker import comparar_stock
+from ivostock.comparador.worker import comparar_stock
+
 
 def test_comparar_stock_sin_cambios():
     actual = [{"id": 1, "qty": 10, "precio": 100}]
