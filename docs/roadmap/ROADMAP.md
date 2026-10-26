@@ -17,7 +17,7 @@ El alcance está en el [PRD](../prd/PRD.md); el diseño en el [SRD](../srd/SRD.m
 | 9 | CLI y corte a cero | Implementado; pruebas de corte y revisión manual |
 | 10 | Cierres abruptos, caída de base y CI | 68 pruebas en Docker y ensayo real aprobados; workflow remoto por comprobar |
 | 11 | Coherencia documental y guía ejecutable | Verificadores y recorrido del README |
-| 12 | Video público de 5–12 minutos y commits de entrega | Commits locales organizados con [coautorías del equipo](../../COMMITS-EQUIPO.md); pendientes push, video y comprobación de CI remoto |
+| 12 | Video público de 5–12 minutos y commits de entrega | Commits locales organizados con coautorías del equipo; pendientes push, video y comprobación de CI remoto |
 
 El [registro E2](../entregas/ENTREGA-2.md) contiene los resultados concretos. La existencia de un workflow no acredita que haya ejecutado en el servidor remoto.
 

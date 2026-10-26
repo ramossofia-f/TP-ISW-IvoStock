@@ -34,4 +34,4 @@ Estas mediciones corresponden al POC. No acreditan los ensayos del MVP de dos ti
 
 ## Preparación de entrega
 
-La implementación, las pruebas y la documentación están verificadas localmente y organizadas en commits con las [coautorías del equipo](../../COMMITS-EQUIPO.md). Quedan pendientes el push, la grabación/publicación del video de 5–12 minutos y la comprobación de CI remoto. El [roadmap](../roadmap/ROADMAP.md) contiene la tabla de cierre y el guion.
+La implementación, las pruebas y la documentación están verificadas localmente y organizadas en commits con las coautorías del equipo. Quedan pendientes el push, la grabación/publicación del video de 5–12 minutos y la comprobación de CI remoto. El [roadmap](../roadmap/ROADMAP.md) contiene la tabla de cierre y el guion.

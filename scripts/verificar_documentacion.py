@@ -6,7 +6,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 documents = [
     root / "README.md",
-    root / "CLAUDE.md"
+    root / "CLAUDE.md",
     *sorted((root / "docs").rglob("*.md")),
 ]
 documents = [p for p in documents if "consignas" not in p.parts]
