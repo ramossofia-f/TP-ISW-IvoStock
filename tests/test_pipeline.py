@@ -49,6 +49,39 @@ def setup_world(engine, feed_server, count=1):
     return provider
 
 
+def test_catalog_limit_offset_and_import(engine):
+    admin(
+        "/admin/seed",
+        {
+            "store": "T1",
+            "items": [
+                {"id": f"I{n:04}", "sku": f"A{n:04}", "available_quantity": n}
+                for n in range(205)
+            ],
+        },
+    )
+    cfg = Settings.from_env()
+    with httpx.Client(headers={"Authorization": "Bearer " + cfg.simulator_token}) as client:
+        pages = [
+            client.get(cfg.simulator_url + "/stores/T1/items", params={"limit": 100, "offset": n})
+            for n in (0, 100, 200)
+        ]
+        assert all(response.status_code == 200 for response in pages)
+        assert [len(response.json()["items"]) for response in pages] == [100, 100, 5]
+        assert [response.json()["next_offset"] for response in pages] == [100, 200, None]
+        assert [item["id"] for response in pages for item in response.json()["items"]] == [
+            f"I{n:04}" for n in range(205)
+        ]
+        assert client.get(cfg.simulator_url + "/stores/T1/items?offset=-1").status_code == 422
+        assert client.get(cfg.simulator_url + "/stores/T1/items?limit=101").status_code == 422
+
+    assert services.add_store(engine, "T1") == {"store": "T1", "items": 205}
+    with engine.begin() as conn:
+        assert rows(conn, "SELECT count(*) AS total FROM catalog WHERE store_id='T1'")[0][
+            "total"
+        ] == 205
+
+
 def drain(engine):
     deadline = time.monotonic() + 15
     while services.status(engine, "tasks"):

@@ -84,20 +84,20 @@ def health():
 
 
 @app.get("/stores/{store}/items", dependencies=[Depends(authorize)])
-def catalog(store: str, cursor: str = "", limit: int = Query(100, ge=1, le=100)):
+def catalog(store: str, limit: int = Query(100, ge=1, le=100), offset: int = Query(0, ge=0)):
     if response := injected(store, "*"):
         return response
     with database().begin() as conn:
         items = rows(
             conn,
-            "SELECT * FROM sim_items WHERE store_id=:s AND id>:c ORDER BY id LIMIT :n",
+            "SELECT * FROM sim_items WHERE store_id=:s ORDER BY id LIMIT :n OFFSET :o",
             s=store,
-            c=cursor,
             n=limit + 1,
+            o=offset,
         )
     return {
         "items": [serialize(item) for item in items[:limit]],
-        "next_cursor": items[limit - 1]["id"] if len(items) > limit else None,
+        "next_offset": offset + limit if len(items) > limit else None,
     }
 
 

@@ -76,7 +76,7 @@ El contrato del proveedor es RF-11. La preparación agrega exactamente los bytes
 
 | Endpoint del simulador | Contrato |
 |---|---|
-| `GET /stores/{store}/items` | Bearer preconfigurado; `cursor` y `limit` entre 1 y 100; devuelve `items` y `next_cursor` |
+| `GET /stores/{store}/items` | Bearer preconfigurado; `limit` entero de 1 a 100 (por defecto 100) y `offset` entero desde 0 (por defecto 0). Ordena por ID de publicación; devuelve `items` y `next_offset` (`null` al terminar) |
 | `PUT /stores/{store}/items/{item}/stock` | Bearer; JSON `available_quantity` entero no negativo; cantidad absoluta |
 | `POST /admin/seed` | Credencial de control; crea catálogo una vez por tienda |
 | `POST /admin/fault` | Credencial de control; estado HTTP e intentos afectados, por tienda o publicación |

@@ -28,7 +28,7 @@ def add_store(engine, store):
             raise ValueError("Tienda ocupada; reintentá")
         with owner.begin():
             execute(owner, "INSERT INTO stores(id) VALUES (:s) ON CONFLICT DO NOTHING", s=store)
-        cursor = ""
+        offset = 0
         count = 0
         while True:
             response = market_request(
@@ -36,7 +36,7 @@ def add_store(engine, store):
                 store,
                 "GET",
                 f"/stores/{store}/items",
-                params={"cursor": cursor, "limit": 100},
+                params={"limit": 100, "offset": offset},
             )
             if response.status_code == 429:
                 time.sleep(retry_delay(response))
@@ -62,8 +62,8 @@ def add_store(engine, store):
                         q=item["available_quantity"],
                     )
             count += len(page["items"])
-            cursor = page["next_cursor"]
-            if cursor is None:
+            offset = page["next_offset"]
+            if offset is None:
                 break
         with owner.begin():
             execute(
