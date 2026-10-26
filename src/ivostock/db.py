@@ -23,6 +23,10 @@ def execute(conn, sql, **params):
     return conn.execute(text(sql), params)
 
 
+def execute_many(conn, sql, params):
+    return conn.execute(text(sql), params)
+
+
 @contextmanager
 def ownership(engine, name):
     """Bloqueo de sesión: se libera también al morir el proceso propietario."""

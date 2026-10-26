@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from ivostock.config import Settings
-from ivostock.db import database, execute, rows
+from ivostock.db import database, execute, execute_many, rows
 from ivostock.quota import reserve
 
 app = FastAPI(title="Marketplace simulado", version="0.1.0")
@@ -95,9 +95,11 @@ def catalog(store: str, limit: int = Query(100, ge=1, le=100), offset: int = Que
             n=limit + 1,
             o=offset,
         )
+        total = rows(conn, "SELECT count(*) AS n FROM sim_items WHERE store_id=:s", s=store)[0]["n"]
     return {
         "items": [serialize(item) for item in items[:limit]],
         "next_offset": offset + limit if len(items) > limit else None,
+        "total": total,
     }
 
 
@@ -139,14 +141,14 @@ def seed(payload: Seed):
         if rows(conn, "SELECT id FROM sim_stores WHERE id=:s", s=payload.store):
             raise HTTPException(409, "La tienda ya tiene catálogo")
         execute(conn, "INSERT INTO sim_stores(id) VALUES (:s)", s=payload.store)
-        for item in payload.items:
-            execute(
+        if payload.items:
+            execute_many(
                 conn,
                 "INSERT INTO sim_items(store_id,id,sku,available_quantity) VALUES (:s,:i,:sku,:q)",
-                s=payload.store,
-                i=item.id,
-                sku=item.sku,
-                q=item.available_quantity,
+                [
+                    {"s": payload.store, "i": i.id, "sku": i.sku, "q": i.available_quantity}
+                    for i in payload.items
+                ],
             )
     return {"store": payload.store, "items": len(payload.items)}
 
@@ -180,3 +182,22 @@ def observe(store: str):
             serialize(item)
             for item in rows(conn, "SELECT * FROM sim_items WHERE store_id=:s ORDER BY id", s=store)
         ]
+
+
+@app.get("/admin/stores/{store}/summary", dependencies=[Depends(admin)])
+def summary(store: str):
+    """Existencia, tamaño y llamadas de negocio de los últimos 60 segundos."""
+    with database().begin() as conn:
+        found = rows(
+            conn,
+            "SELECT EXISTS(SELECT 1 FROM sim_stores WHERE id=:s) AS exists,"
+            " (SELECT count(*) FROM sim_items WHERE store_id=:s) AS items,"
+            " (SELECT count(*) FROM sim_calls WHERE store_id=:s AND at>clock_timestamp()-interval '60 seconds') AS calls",
+            s=store,
+        )[0]
+    return {
+        "store": store,
+        "exists": found["exists"],
+        "items": found["items"],
+        "calls_last_minute": found["calls"],
+    }
