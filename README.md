@@ -2,7 +2,7 @@
 
 Motor de sincronización de inventario desde proveedores HTTP hacia un marketplace simulado. El POC se opera por CLI y conserva snapshots, inventario, trabajo pendiente y evidencia de fallas.
 
-El [PRD](docs/prd/PRD.md) define el producto; el [SRD](docs/srd/SRD.md), su implementación; los [ADRs](docs/adr/README.md), las decisiones; el [roadmap](docs/roadmap/ROADMAP.md), evidencia y próximos hitos. El reparto de archivos y commits del equipo está en [COMMITS-EQUIPO.md](COMMITS-EQUIPO.md).
+El [PRD](docs/prd/PRD.md) define el producto; el [SRD](docs/srd/SRD.md), su implementación; los [ADRs](docs/adr/README.md), las decisiones; el [roadmap](docs/roadmap/ROADMAP.md), evidencia y próximos hitos.
 
 ## Arranque
 
