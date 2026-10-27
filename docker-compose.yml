@@ -13,7 +13,7 @@ services:
       POSTGRES_USER: ivostock
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Ejecutar python scripts/configurar.py}
       POSTGRES_DB: ivostock
-    ports: ["127.0.0.1:5432:5432"]
+    ports: ["127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"]
     volumes: ["postgres-data:/var/lib/postgresql/data"]
     restart: unless-stopped
     healthcheck:
@@ -88,16 +88,36 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-  feeds:
+  catalog:
+    <<: *app
+    command: ["python", "-m", "ivostock.worker", "catalog"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "ivostock.health", "catalog"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  provider:
     build: .
-    command: ["python", "-m", "http.server", "8080", "--directory", "/feeds"]
+    command: ["uvicorn", "ivostock.proveedor:app", "--host", "0.0.0.0", "--port", "8081"]
     volumes: ["./data/feeds:/feeds:ro"]
-    ports: ["127.0.0.1:8080:8080"]
+    ports: ["127.0.0.1:8081:8081"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8081/health').raise_for_status()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
   cli:
     <<: *app
     profiles: ["tools"]
     command: ["ivostock", "--help"]
+    volumes: ["./data:/work/data"]
+  user:
+    <<: *app
+    profiles: ["tools"]
+    stdin_open: true
+    tty: true
+    command: ["python", "-m", "ivostock.usuario"]
     volumes: ["./data:/work/data"]
   tests:
     <<: *app

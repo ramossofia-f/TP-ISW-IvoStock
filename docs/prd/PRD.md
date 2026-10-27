@@ -6,7 +6,7 @@ Equipo: María Saráchaga, Francisco Ortega y Sofía Ramos. Entrega 2: 27/10/202
 
 ## Problema y propuesta
 
-Un vendedor con varios proveedores y tiendas mantiene conexiones independientes para cada par. Incorporar una tienda obliga a repetir lecturas y lógica de integración, y resulta difícil saber qué publicaciones están actualizadas.
+Un vendedor con varios proveedores y tiendas mantiene conexiones independientes para cada par. Incorporar una tienda obliga a repetir lecturas y lógica de integración, y resulta difícil saber qué publicaciones están actualizadas. En el caso que motiva el proyecto, siete sistemas separados sostienen dos fuentes de stock: el trabajo crece con el producto de proveedores por tiendas y no con su suma. Una sincronización atrasada o incorrecta produce sobreventa, cancelaciones y pérdida de reputación.
 
 Ivo Stock ingiere cada proveedor una vez y reutiliza su inventario para todas las tiendas vinculadas. El operador configura fuentes, incorpora tiendas, aprueba coincidencias por SKU y consulta pendientes y fallas. El motor continúa procesando con la interfaz detenida, siempre que los almacenes estén disponibles.
 
@@ -24,9 +24,9 @@ El catálogo se prepara antes de incorporar la tienda y sus publicaciones perman
 
 | ID | Recorrido y resultado |
 |---|---|
-| CU-01 | Incorporar un proveedor: indicar nombre y URL, comprobar el contrato y revisar una muestra; guardar una configuración validada |
-| CU-02 | Incorporar una tienda preparada: importar su catálogo por HTTP y dejarlo disponible para vincular |
-| CU-03 | Sugerir coincidencias exactas de SKU y aprobar todas o una selección; rechazar publicaciones ya asignadas |
+| CU-01 | Incorporar un proveedor: indicar nombre y URL, comprobar el contrato, revisar una muestra y las coincidencias; guardar una configuración validada con su primera ingesta programada |
+| CU-02 | Incorporar una tienda preparada: importar su catálogo por HTTP en segundo plano, consultar su progreso y dejarlo disponible para vincular |
+| CU-03 | Sugerir coincidencias exactas de SKU y aprobar todas, una selección o una cantidad; rechazar publicaciones ya asignadas |
 | CU-04 | Ingerir el inventario, validar la corrida y propagar únicamente las diferencias necesarias |
 | CU-05 | Apagar un vínculo o dar de baja un proveedor; conservar la intención hasta confirmar el cero |
 | CU-06 | Consultar corridas, stock deseado y confirmado, pendientes, cuarentenas y fallas |
@@ -40,10 +40,10 @@ Must significa necesario para el hito indicado. POC corresponde a E2 y MVP a E3.
 |---|---|---|---|
 | RF-01 | Operadores individuales precreados, login y operaciones autenticadas en la aplicación | Must | MVP |
 | RF-02 | Alta de proveedor por URL HTTP, validación y preview antes de considerarlo válido | Must | POC |
-| RF-03 | Ingesta automática con intervalo global de 300 minutos, sin corridas simultáneas del mismo proveedor; disparo manual independiente | Must | POC |
+| RF-03 | Ingesta automática con intervalo global de 300 minutos, sin corridas simultáneas del mismo proveedor; la primera vence 300 minutos después del alta. Disparo manual independiente y adelanto del vencimiento por CLI | Must | POC |
 | RF-04 | Modificación de nombre y URL del proveedor con nueva validación | Should | MVP |
-| RF-05 | Incorporación de tiendas simuladas con credenciales preconfiguradas e importación inicial de catálogo paginado | Must | POC |
-| RF-06 | Coincidencia exacta por SKU, búsqueda y aprobación total o selectiva; exige una corrida aceptada | Must | POC |
+| RF-05 | Incorporación de tiendas simuladas con credenciales preconfiguradas e importación inicial de catálogo paginado en segundo plano, con progreso consultable y reanudación desde la última página confirmada | Must | POC |
+| RF-06 | Coincidencia exacta por SKU contra la validación del alta o la última corrida aceptada; búsqueda y aprobación total, selectiva o por cantidad. Los vínculos aprobados antes de la primera corrida aceptada esperan sin generar escrituras | Must | POC |
 | RF-07 | Rechazo de una segunda asignación activa a la misma publicación | Must | POC |
 | RF-08 | Un SKU puede abastecer publicaciones de varias tiendas con su cantidad completa | Must | POC |
 | RF-09 | Apagado de vínculo con intención de cero persistida y desactivación únicamente tras confirmarlo | Must | POC |
@@ -59,7 +59,7 @@ Must significa necesario para el hito indicado. POC corresponde a E2 y MVP a E3.
 | RF-19 | Persistir errores definitivos y reintentos agotados en dead letter; suspender el vínculo hasta revisión manual sin borrar evidencia | Must | POC |
 | RF-20 | Baja de proveedor con propagación gradual de cero sobre sus vínculos | Must | POC |
 | RF-21 | Consultar por vínculo deseado, confirmado, última confirmación, pendiente y falla; un intento fallido no modifica el confirmado | Must | POC |
-| RF-22 | CLI para configurar, ingerir, vincular, consultar, cortar, reproducir corridas y reanudar fallas; reanudar usa el valor vigente y respeta cortes pendientes | Must | POC |
+| RF-22 | CLI para configurar, ingerir, vincular, consultar, monitorear cuota y progreso, cortar, reproducir corridas y reanudar fallas; reanudar usa el valor vigente y respeta cortes pendientes | Must | POC |
 | RF-23 | Fuente inaccesible o corrida inválida: estado degradado y congelamiento de esa fuente; las restantes continúan | Must | POC |
 | RF-24 | Fallas globales de acceso a una tienda: degradación y conservación de pendientes hasta recuperar acceso | Must | POC |
 | RF-25 | Interfaz autenticada de configuración, búsqueda y tablero de corridas, tiendas, pendientes, confirmaciones y fallas | Must | MVP |
@@ -77,7 +77,7 @@ p = 1 - (1 - d) * (1 - z)
 cuarentena si p > 0.5
 ```
 
-Las tolerancias son fijas; el puntaje es determinista. La primera corrida establece la base sin evaluar D/Z y todavía no puede tener vínculos. Una fila descartada deja ausente su SKU salvo que exista otra ocurrencia válida. Una cuarentena puede reproducirse por CLI, con la misma validación; no existe aprobación que omita la guarda.
+Las tolerancias son fijas; el puntaje es determinista. La primera corrida establece la base sin evaluar D/Z; los vínculos aprobados antes de ella esperan sin escrituras y se comparan al aceptarla. Una fila descartada deja ausente su SKU salvo que exista otra ocurrencia válida. Una cuarentena puede reproducirse por CLI, con la misma validación; no existe aprobación que omita la guarda.
 
 ## Requisitos no funcionales
 
@@ -105,17 +105,36 @@ La espera hasta la siguiente ingesta puede ser de cinco horas y se informa separ
 
 ## Datos, demostración y límites
 
-La fuente real disponible es un snapshot archivado de Celesa, de aproximadamente 4 MB y 255.000 SKU. El original no tiene encabezado. La preparación conserva sus bytes y produce una copia con la cabecera requerida, accesible por HTTP; el manifiesto registra procedencia, fecha y hashes. La demostración identifica la reproducción de datos archivados y las variantes sintéticas utilizadas para fallas. No se inventa un histórico de corridas.
+La fuente real disponible es un snapshot archivado de Celesa, de aproximadamente 4 MB y 255.000 SKU. El original no tiene encabezado. La preparación conserva sus bytes y produce una copia con la cabecera requerida, accesible por HTTP; el manifiesto registra procedencia, fecha y hashes. La caracterización del feed (bytes, hash, filas, SKU, duplicados, ceros, tasa de errores de parseo y descartes con línea y motivo) se reproduce con [scripts/analizar_feed.py](../../scripts/analizar_feed.py), que aplica el mismo parser del motor: `uv run python scripts/analizar_feed.py data/feeds/ARCHIVO.csv`. Con dos snapshots calcula también `D`, `Z`, `p` y la cantidad de diferencias. Los resultados están en el [registro E2](../entregas/ENTREGA-2.md). Un proveedor de ensayo sirve el snapshot por HTTP y, en cada consulta, permuta las cantidades positivas del 40 % de los SKU, sin modificar el archivo base; `?no-changes=true` devuelve la versión archivada. La demostración identifica la reproducción de datos archivados y las variantes sintéticas utilizadas para cambios y fallas. No se inventa un histórico de corridas.
 
 Los SKU del catálogo simulado se seleccionan del inventario preparado. El stock físico no puede verificarse y se acepta como información de la fuente. Una fuente congelada conserva el último stock publicado hasta recuperación o baja explícita. El marketplace es un servicio simulado del proyecto; su funcionamiento no acredita una integración productiva.
 
 La disponibilidad se acredita sólo para la ventana medida. La escala de demostración no acredita capacidad ilimitada. El estado de implementación y las evidencias se mantienen en el [roadmap](../roadmap/ROADMAP.md).
 
+## Supuestos y plan B
+
+Cada supuesto separa la consecuencia de que sea falso del plan B: lo que el equipo hace en ese caso. Cuando no existe una alternativa se declara como riesgo aceptado.
+
+| ID | Supuesto | Consecuencia si es falso | Plan B |
+|---|---|---|---|
+| S-01 | Las publicaciones ya existen en la tienda; el sistema sólo escribe su stock | Los SKU sin publicación quedan fuera de la sincronización | Las publicaciones faltantes se crean con la herramienta externa que el equipo ya opera. Después se reimporta el catálogo (RF-05) y se vinculan con el flujo habitual (RF-06), sin cambiar el alcance |
+| S-02 | El SKU es una clave de cruce confiable entre proveedor y tienda | Las sugerencias automáticas pierden precisión | El SKU se trata como cadena exacta. Los casos dudosos se resuelven con búsqueda y aprobación selectiva (RF-06); los que no cruzan quedan sin vincular sin bloquear al resto |
+| S-03 | El stock que informa el proveedor es la verdad disponible | Se propagan cantidades equivocadas sin poder detectarlo | Sin plan B dentro del sistema: riesgo aceptado. Auditar stock físico exige acceso a depósitos y reservar un margen contradice INV-2. Mitigación: la guarda de corridas (RF-13) frena errores masivos; ante un error puntual se apaga el vínculo (RF-09) o se da de baja el proveedor (RF-20) |
+| S-04 | La tienda admite 60 llamadas/minuto compartidas entre lecturas y escrituras, con la taxonomía de errores simulada | Cambia el caudal por tienda y con él RNF-02 | El límite vive en un único módulo de cuota y en el simulador. Se ajusta ese valor, se recalcula RNF-02 con la misma aritmética y, si baja, se declaran los nuevos objetivos antes de medir |
+| S-05 | El snapshot archivado de Celesa es representativo del feed real | Las mediciones de volumen y calidad no se trasladan a la fuente viva | Se repite la caracterización con [scripts/analizar_feed.py](../../scripts/analizar_feed.py) sobre cualquier snapshot nuevo. Si no hay acceso a la fuente, el generador sintético con semilla reproduce volumen, ceros, filas corruptas y deriva |
+| S-06 | Entre corridas cambia una fracción chica del inventario | Las diferencias superan la cuota y la tienda se atrasa | La cola mantiene una tarea pendiente por vínculo (RF-16), así que el atraso queda acotado y visible (RNF-05). Se mide la fracción real con `D`, `Z` y el conteo de diferencias antes de comprometer RNF-02 |
+| S-07 | El simulador representa al marketplace en autenticación, cuota y errores | El motor funciona contra el simulador y no contra la API real | El motor usa el marketplace sólo por HTTP (ADR-0006), así que una implementación real reemplaza al cliente sin tocar ingesta ni comparación. Mientras tanto, la integración real se declara validada por contrato y no en producción |
+| S-08 | Tres integrantes sostienen el calendario del [roadmap](../roadmap/ROADMAP.md) hasta el 24/11/2026 | Los tramos del MVP no se completan en fecha | Si un tramo se atrasa más de dos días se recorta antes de empezar el siguiente: primero los *Should* (RF-04), después se reduce la escala medida (RNF-09, RNF-15). Recortar un *Must* exige revalidar con la cátedra |
+
 ## Criterios de aceptación
 
-1. Configurar un proveedor válido e incorporar una tienda sin modificar código.
-2. Recorrer el feed real completo hasta publicaciones simuladas y observar las confirmaciones.
-3. Repetir una corrida estable sin nuevas escrituras.
-4. Demostrar cuarentena, 429, dead letter, reanudación y corte confirmado a cero.
-5. Recuperar trabajo vigente después de los cierres reproducibles.
-6. Incorporar desde la app una segunda tienda reutilizando la ingesta y medir los objetivos del MVP.
+K = 2: el POC demuestra una tienda y el MVP, dos tiendas simuladas sobre el mismo proveedor.
+
+| # | Criterio | Cómo se verifica | Hito |
+|---|---|---|---|
+| 1 | Configurar un proveedor válido e incorporar una tienda sin modificar código | Recorrido del README por CLI sobre el commit entregado, sin cambios en `src/` | POC |
+| 2 | Recorrer el feed real completo hasta publicaciones simuladas y observar las confirmaciones | RNF-01 medido en el registro E2; `status links` muestra confirmado igual a deseado | POC |
+| 3 | Repetir una corrida estable sin nuevas escrituras | RNF-04: prueba de integración en CI y cero intentos nuevos en el ensayo real | POC |
+| 4 | Demostrar cuarentena, 429, dead letter, reanudación y corte confirmado a cero | RF-13, RF-18, RF-19, RF-22 y RF-09: pruebas automatizadas propias en CI y fallas provocadas en el simulador | POC |
+| 5 | Recuperar trabajo vigente después de cierres abruptos | RNF-06: diez cierres reproducibles, cero trabajo vigente perdido y reanudación en hasta 10 minutos | POC |
+| 6 | Incorporar desde la app la segunda tienda reutilizando la ingesta y medir los objetivos del MVP | Una sola corrida por proveedor alimenta ambas tiendas; RNF-02, RNF-07, RNF-09 y RNF-15 medidos con su protocolo del SRD | MVP |
