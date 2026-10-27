@@ -82,7 +82,7 @@ def engine(infrastructure):
     with db.begin() as conn:
         execute(
             conn,
-            "TRUNCATE providers,stores,runs,stock,catalog,links,comparison_events,tasks,attempts,dead_letters,market_calls,worker_heartbeats,sim_stores,sim_items,sim_calls,sim_faults RESTART IDENTITY CASCADE",
+            "TRUNCATE provider_preview,providers,stores,runs,stock,catalog,links,comparison_events,tasks,attempts,dead_letters,market_calls,worker_heartbeats,sim_stores,sim_items,sim_calls,sim_faults RESTART IDENTITY CASCADE",
         )
     return db
 

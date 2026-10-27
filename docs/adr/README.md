@@ -12,5 +12,6 @@ Los ADRs explican contexto, alternativas, decisión, consecuencias y comprobaci�
 | [0006](0006-marketplace-http.md) | Marketplace simulado por HTTP |
 | [0007](0007-inventarios-deltas.md) | Inventarios completos, deltas y escenarios reproducibles |
 | [0008](0008-contenedores-ci.md) | Contenedores y CI |
+| [0009](0009-catalogo-en-segundo-plano.md) | Importación de catálogo en segundo plano con punto de control |
 
 Las mediciones se registran en la [evidencia E2](../entregas/ENTREGA-2.md). ML está pendiente de definición para el MVP.

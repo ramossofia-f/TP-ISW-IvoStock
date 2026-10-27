@@ -18,7 +18,7 @@ for prefix in ("RF", "RNF", "CU"):
     assert ids == expected, (prefix, ids)
     known.update(ids)
 adrs = sorted((root / "docs/adr").glob("[0-9][0-9][0-9][0-9]-*.md"))
-assert [p.name[:4] for p in adrs] == [f"{n:04}" for n in range(1, 9)]
+assert [p.name[:4] for p in adrs] == [f"{n:04}" for n in range(1, len(adrs) + 1)]
 for path in documents:
     content = path.read_text(encoding="utf-8")
     for reference in re.findall(r"\b(?:RNF|RF|CU)-\d+\b", content):
@@ -28,5 +28,5 @@ for path in documents:
             continue
         assert (path.parent / target.split("#")[0]).exists(), (path, target)
 print(
-    f"Documentación coherente: {len(documents)} documentos, {len(known)} requisitos/casos y 8 ADRs"
+    f"Documentación coherente: {len(documents)} documentos, {len(known)} requisitos/casos y {len(adrs)} ADRs"
 )

@@ -1,5 +1,6 @@
 import concurrent.futures
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -47,6 +48,158 @@ def setup_world(engine, feed_server, count=1):
     services.approve(engine, provider, "T1")
     services.compare_once(engine)
     return provider
+
+
+def test_catalog_limit_offset_and_import(engine):
+    admin(
+        "/admin/seed",
+        {
+            "store": "T1",
+            "items": [
+                {"id": f"I{n:04}", "sku": f"A{n:04}", "available_quantity": n} for n in range(205)
+            ],
+        },
+    )
+    cfg = Settings.from_env()
+    with httpx.Client(headers={"Authorization": "Bearer " + cfg.simulator_token}) as client:
+        pages = [
+            client.get(cfg.simulator_url + "/stores/T1/items", params={"limit": 100, "offset": n})
+            for n in (0, 100, 200)
+        ]
+        assert all(response.status_code == 200 for response in pages)
+        assert [len(response.json()["items"]) for response in pages] == [100, 100, 5]
+        assert [response.json()["next_offset"] for response in pages] == [100, 200, None]
+        assert [item["id"] for response in pages for item in response.json()["items"]] == [
+            f"I{n:04}" for n in range(205)
+        ]
+        assert client.get(cfg.simulator_url + "/stores/T1/items?offset=-1").status_code == 422
+        assert client.get(cfg.simulator_url + "/stores/T1/items?limit=101").status_code == 422
+
+    assert services.add_store(engine, "T1") == {"store": "T1", "items": 205}
+    with engine.begin() as conn:
+        assert (
+            rows(conn, "SELECT count(*) AS total FROM catalog WHERE store_id='T1'")[0]["total"]
+            == 205
+        )
+
+
+def test_catalog_import_resumes_from_committed_page_after_crash(engine, tmp_path):
+    admin(
+        "/admin/seed",
+        {
+            "store": "T1",
+            "items": [
+                {"id": f"I{n:04}", "sku": f"A{n:04}", "available_quantity": 0} for n in range(250)
+            ],
+        },
+    )
+    services.register_store(engine, "T1")
+    marker = tmp_path / "marker"
+    env = {
+        **os.environ,
+        "IVO_FAILPOINT": "catalog_page_committed",
+        "IVO_FAILPOINT_MARKER": str(marker),
+    }
+    proc = subprocess.Popen([sys.executable, "-m", "ivostock.worker", "catalog"], env=env)
+    try:
+        deadline = time.monotonic() + 15
+        while not marker.exists():
+            assert time.monotonic() < deadline and proc.poll() is None
+            time.sleep(0.02)
+    finally:
+        proc.kill()
+        proc.wait(timeout=5)
+    assert services.status(engine, "stores")[0]["processed"] == 100
+    while services.import_page(engine):
+        pass
+    store = services.status(engine, "stores")[0]
+    assert (store["processed"], store["total"], store["status"]) == (250, 250, "healthy")
+    with engine.begin() as conn:
+        assert rows(conn, "SELECT count(*) AS n FROM catalog")[0]["n"] == 250
+
+
+def test_links_approved_before_first_ingest_wait_and_then_publish(engine, feed_server):
+    admin(
+        "/admin/seed",
+        {
+            "store": "T1",
+            "items": [
+                {"id": f"I{n}", "sku": f"A{n:03}", "available_quantity": 0} for n in range(3)
+            ],
+        },
+    )
+    services.add_store(engine, "T1")
+    added = services.add_provider(engine, "P", feed_server["url"])
+    assert added["awaiting_first_ingest"] and added["suggestions"][0]["total"] == 3
+    provider = added["id"]
+    assert services.approve(engine, provider, "T1", count=2, positive_only=True) == {
+        "approved": 2,
+        "awaiting_ingest": True,
+    }
+    services.compare_once(engine)
+    assert services.status(engine, "tasks") == []
+    before = services.status(engine, summary=True)
+    assert (before["awaiting_ingest"], before["pending"], before["zero_confirmed"]) == (2, 0, 2)
+    services.schedule_now(engine, provider)
+    assert services.ingest(engine, provider, scheduled=True)["status"] == "accepted"
+    accepted = services.status(engine, summary=True)  # Aceptada pero todavía sin comparar.
+    assert (accepted["awaiting_ingest"], accepted["synchronized"]) == (2, 0)
+    services.compare_once(engine)
+    assert len(services.status(engine, "tasks")) == 2
+    drain(engine)
+    after = services.monitor(engine, "T1")["links"]
+    assert (
+        after["synchronized"] == after["changed_from_initial"] == after["positive_confirmed"] == 2
+    )
+    item = services.status(engine, store="T1", limit=1)["items"][0]
+    assert (item["initial_confirmed"], item["confirmed"], item["desired"]) == (0, 10, 10)
+
+
+def test_provider_disable_cuts_every_link_to_zero_before_deactivating(engine, feed_server):
+    provider = setup_world(engine, feed_server, count=3)
+    drain(engine)
+    assert services.cut(engine, provider) == {"cuts": 3}
+    assert services.status(engine, "providers")[0]["status"] == "disabled"
+    assert {link["state"] for link in services.status(engine)} == {"active"}
+    drain(engine)
+    assert {link["state"] for link in services.status(engine)} == {"inactive"}
+    assert {item["available_quantity"] for item in admin("/admin/stores/T1")} == {0}
+
+
+def test_revoked_credentials_degrade_store_and_keep_pending_work(engine, feed_server):
+    setup_world(engine, feed_server)
+    admin("/admin/fault", {"store": "T1", "status": 401, "remaining": 1})
+    assert publish_once(engine)
+    store = services.status(engine, "stores")[0]
+    assert store["status"] == "degraded" and store["last_error"] == "HTTP 401"
+    assert len(services.status(engine, "tasks")) == 1
+    assert services.status(engine, "deadletters") == []
+    assert not publish_once(engine)  # La tienda degradada deja de consumir su cola.
+    with engine.begin() as conn:
+        execute(conn, "UPDATE stores SET blocked_until=now()")
+    drain(engine)
+    assert services.status(engine, "stores")[0]["status"] == "healthy"
+    assert services.status(engine)[0]["confirmed"] == 10
+
+
+def test_unreachable_provider_degrades_and_freezes_its_inventory(engine, feed_server):
+    provider = setup_world(engine, feed_server)
+    drain(engine)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        closed = sock.getsockname()[1]
+    with engine.begin() as conn:
+        execute(
+            conn,
+            "UPDATE providers SET url=:u WHERE id=:p",
+            u=f"http://127.0.0.1:{closed}/feed.csv",
+            p=provider,
+        )
+    assert services.ingest(engine, provider)["status"] == "failed"
+    assert services.status(engine, "providers")[0]["status"] == "degraded"
+    services.compare_once(engine)
+    assert services.status(engine, "tasks") == []
+    assert services.status(engine)[0]["confirmed"] == 10
 
 
 def drain(engine):
@@ -176,6 +329,8 @@ def test_simulator_counts_reads_writes_and_failed_calls(engine, feed_server):
 
 def test_schedule_and_ownership(engine, feed_server):
     provider = services.add_provider(engine, "P", feed_server["url"])["id"]
+    assert services.ingest(engine, provider, scheduled=True)["status"] == "not_due"
+    services.schedule_now(engine, provider)
     assert services.ingest(engine, provider, scheduled=True)["status"] == "accepted"
     with engine.begin() as conn:
         before = rows(conn, "SELECT next_run_at FROM providers WHERE id=:p", p=provider)[0][

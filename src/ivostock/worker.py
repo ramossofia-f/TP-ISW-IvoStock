@@ -6,7 +6,7 @@ import time
 from ivostock.db import database, execute, rows
 from ivostock.logs import configurar
 from ivostock.publisher import publish_once
-from ivostock.services import compare_once, ingest
+from ivostock.services import compare_once, import_page, ingest
 
 
 def heartbeat(engine, name):
@@ -24,6 +24,8 @@ def tick(engine, kind):
         return compare_once(engine)
     if kind == "publish":
         return publish_once(engine)
+    if kind == "catalog":
+        return import_page(engine)
     with engine.begin() as conn:
         due = rows(
             conn,
@@ -41,7 +43,7 @@ def tick(engine, kind):
 def main():
     configurar(sys.stdout)
     ap = argparse.ArgumentParser()
-    ap.add_argument("kind", choices=["ingest", "compare", "publish"])
+    ap.add_argument("kind", choices=["ingest", "compare", "publish", "catalog"])
     ap.add_argument("--once", action="store_true")
     args = ap.parse_args()
     engine = database()
