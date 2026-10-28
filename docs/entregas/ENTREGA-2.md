@@ -63,4 +63,4 @@ macOS 26.6.2 (Apple M4) con Docker Desktop 29.2.1 y contenedores Linux aarch64. 
 
 ## Preparación de entrega
 
-La implementación, las pruebas y la documentación están verificadas localmente y organizadas en commits con las coautorías del equipo. Quedan pendientes el push, la grabación/publicación del video de 5–12 minutos y la comprobación de CI remoto. El [roadmap](../roadmap/ROADMAP.md) contiene la tabla de cierre y el guion.
+La implementación, las pruebas y la documentación están verificadas localmente y en la CI remota, que pasó en `main`. El video de la demostración está publicado en https://youtu.be/4_mCiduyV24; muestra el recorrido registrado en esta página, grabado con comandos reales sobre el sistema local. El [roadmap](../roadmap/ROADMAP.md) contiene la tabla de cierre y el guion.
