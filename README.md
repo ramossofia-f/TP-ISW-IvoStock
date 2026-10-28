@@ -13,7 +13,7 @@ TP integrador, Ingeniería de Software.
 | Entrega | Contenido | Video |
 |---|---|---|
 | 1. Diseño (20/09/2026, aprobada) | PRD, roadmap y ADRs entregados en el commit [`354b155`](https://github.com/ramossofia-f/TP-ISW-IvoStock/tree/354b155) | https://www.youtube.com/watch?v=zP0HYAmsSoY |
-| 2. POC y SRD (27/10/2026) | [PRD](docs/prd/PRD.md) revisado con la devolución, [SRD](docs/srd/SRD.md), [ADRs](docs/adr/README.md), [roadmap](docs/roadmap/ROADMAP.md), [evidencia](docs/entregas/ENTREGA-2.md) y el POC descripto abajo | Pendiente |
+| 2. POC y SRD (27/10/2026) | [PRD](docs/prd/PRD.md) revisado con la devolución, [SRD](docs/srd/SRD.md), [ADRs](docs/adr/README.md), [roadmap](docs/roadmap/ROADMAP.md), [evidencia](docs/entregas/ENTREGA-2.md) y el POC descripto abajo | https://youtu.be/4_mCiduyV24 |
 
 La devolución de la Entrega 1 está incorporada: disponibilidad verificable (RNF-07), criterios de aceptación con K = 2 y forma de verificación, supuestos con plan B, script de medición del feed, infraestructura justificada en los ADRs y documentos en español. Para responder a la observación de alcance excesivo, el MVP se redujo a 2.000 vínculos en dos tiendas y cinco operadores.
 
