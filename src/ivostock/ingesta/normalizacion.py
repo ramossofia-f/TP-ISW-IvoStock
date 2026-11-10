@@ -15,6 +15,11 @@ class Feed:
         errors = sum(d["reason"] != "duplicate" for d in self.discarded)
         return errors / self.lines if self.lines else 0
 
+    @property
+    def alert(self):
+        """RF-14: alerta cuando los errores de parseo superan el 10 %."""
+        return self.error_rate > 0.10
+
 
 def normalizar(raw: bytes) -> Feed:
     lines = raw.decode("utf-8").splitlines()

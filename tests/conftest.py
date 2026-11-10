@@ -82,7 +82,7 @@ def engine(infrastructure):
     with db.begin() as conn:
         execute(
             conn,
-            "TRUNCATE provider_preview,providers,stores,runs,stock,catalog,links,comparison_events,tasks,attempts,dead_letters,market_calls,worker_heartbeats,sim_stores,sim_items,sim_calls,sim_faults RESTART IDENTITY CASCADE",
+            "TRUNCATE provider_preview,providers,stores,runs,stock,catalog,links,comparison_events,tasks,attempts,dead_letters,market_calls,worker_heartbeats,sim_stores,sim_items,sim_calls,sim_faults,sessions,users RESTART IDENTITY CASCADE",
         )
     return db
 
@@ -111,3 +111,14 @@ def feed_server(tmp_path):
     server.shutdown()
     server.server_close()
     thread.join(timeout=3)
+
+
+@pytest.fixture
+def operators(engine):
+    """Dos operadores precreados: `ana` (clave-ana) y `beto` (clave-beto)."""
+    from ivostock import auth
+
+    hashes = {name: auth.password_hash(f"clave-{name}", "11" * 16) for name in ("ana", "beto")}
+    value = ",".join(f"{name}={stored}" for name, stored in hashes.items())
+    assert auth.sync_operators(engine, value)["created"] == 2
+    return value

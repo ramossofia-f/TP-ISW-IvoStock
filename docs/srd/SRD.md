@@ -24,7 +24,7 @@ flowchart LR
 
 Python 3.12, FastAPI, SQLAlchemy, Alembic, psycopg, httpx y boto3. Las dependencias se bloquean en `uv.lock`. API y workers comparten PostgreSQL; no se llaman entre sí. Sus caídas son independientes mientras PostgreSQL esté disponible. El simulador persiste en tablas propias y el motor sólo lo consulta por HTTP.
 
-La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostock.services`. La sesión imita las acciones del futuro frontend: exige el login de demostración y sólo expone comandos de usuario; los comandos de ensayo y operación (`fault`, `schedule-now`, `monitor`, `compare`, `publish`) quedan en la CLI de backend. La ingesta reside en `ivostock.ingesta.servicio`, el parser y la guarda en `ivostock.ingesta`, la comparación en `ivostock.comparison`, el publicador en `ivostock.publisher` y el catálogo HTTP en `ivostock.marketplace`. El POC no expone operaciones de configuración por la API; su endpoint es `GET /health`. La interfaz autenticada corresponde al MVP.
+La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostock.services`. La sesión imita las acciones del frontend: exige el login con una cuenta de operador (`ivostock.auth`, la misma que usa la API) y sólo expone comandos de usuario; los comandos de ensayo y operación (`fault`, `schedule-now`, `monitor`, `compare`, `publish`) quedan en la CLI de backend. La ingesta reside en `ivostock.ingesta.servicio`, el parser y la guarda en `ivostock.ingesta`, la comparación en `ivostock.comparison`, el publicador en `ivostock.publisher` y el catálogo HTTP en `ivostock.marketplace`. La API expone `GET /health` y la autenticación (`POST /auth/login`, `POST /auth/logout`, `GET /auth/me`); todo otro endpoint declara la dependencia `require_operator` (RNF-11). La configuración (`/providers`, `/stores`, `/links`) delega en `ivostock.services` y traduce los errores tipados de `ivostock.errors` a 404, 409, 422 y 502 sin exponer detalles internos ([ADR-0011](../adr/0011-api-de-configuracion.md)); la interfaz gráfica corresponde al MVP.
 
 ## Persistencia y transacciones
 
@@ -32,6 +32,7 @@ La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostoc
 |---|---|
 | providers, provider_preview | Configuración, próxima ingesta y SKU de la validación del alta |
 | stores, catalog | Estado, punto de control de importación (`import_offset`, `import_total`, `import_finished_at`) y catálogo importado |
+| users, sessions | Operadores precreados (hash PBKDF2) y sesiones con el SHA-256 del token y su vencimiento ([ADR-0010](../adr/0010-cuentas-y-sesiones.md)) |
 | runs, stock | Snapshot, resultado y último inventario completo aceptado |
 | links | Asignación, confirmado inicial, deseado, confirmado, revisión, corte y estado |
 | comparison_events | Aviso durable creado en el commit de aceptación |
