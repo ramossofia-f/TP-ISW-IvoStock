@@ -5,6 +5,7 @@ El [PRD](docs/prd/PRD.md) define el producto; el [SRD](docs/srd/SRD.md), su dise
 ## Reglas de implementación
 
 - Mantener separados los procesos de ingesta, comparación, publicación e importación de catálogo, con PostgreSQL compartido y snapshots S3.
+- La aplicación nunca crea tiendas ni usa la credencial de control: las tiendas se aprovisionan con `scripts/provisionar_tiendas.py`, se incorporan con `services.incorporate_store` y sólo si figuran en `MARKETPLACE_STORES`.
 - Los endpoints de configuración sólo llaman a `ivostock.services`; los errores de negocio son subclases de `ServiceError` con mensajes sin URLs, tokens ni texto de excepciones externas, y los listados no devuelven la URL del proveedor.
 - Toda ruta de la API, salvo `/health` y `/auth/login`, depende de `require_operator`; las cuentas se precrean desde `OPERATOR_ACCOUNTS` y las contraseñas nunca van a Git.
 - La sesión `usuario>` autentica con esas cuentas y sólo expone comandos de usuario; los de ensayo y operación (`fault`, `schedule-now`, `monitor`) quedan en la CLI de backend.

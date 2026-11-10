@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ivostock.comparison import compare_once as compare_once
 from ivostock.comparison import enqueue
+from ivostock.config import Settings
 from ivostock.db import execute, execute_many, ownership, rows
 from ivostock.errors import Conflict, UpstreamError
 from ivostock.errors import NotFound as NotFound
@@ -27,6 +28,33 @@ def find_store(engine, store):
     with engine.begin() as conn:
         found = rows(conn, "SELECT * FROM stores WHERE id=:s", s=store)
     return dict(found[0]) if found else None
+
+
+def available_stores(engine):
+    """Tiendas con credenciales preconfiguradas (MARKETPLACE_STORES) y si ya se incorporaron."""
+    with engine.begin() as conn:
+        done = {r["id"] for r in rows(conn, "SELECT id FROM stores")}
+    return [
+        {"id": store, "incorporated": store in done}
+        for store in Settings.from_env().marketplace_stores
+    ]
+
+
+def incorporate_store(engine, store):
+    """Incorpora una tienda que ya existe en el marketplace; devuelve (fila, creada).
+
+    No crea nada en el marketplace (S-01): la tienda debe estar entre las preconfiguradas y
+    responder a una lectura de negocio. Reutiliza los inventarios ya ingeridos: no descarga a
+    ningún proveedor.
+    """
+    current = find_store(engine, store)
+    if current is not None:
+        return current, False
+    if store not in Settings.from_env().marketplace_stores:
+        raise NotFound("La tienda no está disponible para incorporar")
+    if not store_exists(engine, store):
+        raise NotFound("La tienda no existe en el marketplace")
+    return register_store(engine, store), True
 
 
 def require_store(engine, store, imported=False):

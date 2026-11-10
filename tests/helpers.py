@@ -6,6 +6,7 @@ import httpx
 
 from ivostock import services
 from ivostock.config import Settings
+from ivostock.db import rows
 from ivostock.publisher import publish_once
 
 
@@ -40,3 +41,14 @@ def drain(engine):
         assert time.monotonic() < deadline, services.status(engine, "tasks")
         if not publish_once(engine):
             time.sleep(0.05)
+
+
+def create_provider(api, feed_server, name="Proveedor"):
+    response = api.post("/providers", json={"name": name, "url": feed_server["url"]})
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+def links(engine):
+    with engine.begin() as conn:
+        return rows(conn, "SELECT * FROM links ORDER BY id")

@@ -17,6 +17,7 @@ from ivostock.api_models import (
     STORE_ID,
     ApproveIn,
     ApproveOut,
+    AvailableStore,
     DisableOut,
     ErrorOut,
     LinkOffOut,
@@ -160,6 +161,18 @@ def list_stores():
     return services.list_stores(database())
 
 
+@router.get(
+    "/stores/available",
+    response_model=list[AvailableStore],
+    tags=["stores"],
+    summary="Tiendas disponibles para incorporar",
+    description="Las del marketplace con credenciales preconfiguradas, indicando cuáles ya "
+    "fueron incorporadas.",
+)
+def available_stores():
+    return services.available_stores(database())
+
+
 @router.post(
     "/stores",
     status_code=201,
@@ -167,24 +180,24 @@ def list_stores():
     tags=["stores"],
     summary="Incorporar una tienda",
     description="Registra una tienda existente en el marketplace e inicia en segundo plano la "
-    "importación de su catálogo; el progreso se consulta en `GET /stores`. Si ya estaba "
+    "importación de su catálogo; el progreso se consulta en `GET /stores`. Nunca crea la "
+    "tienda: debe figurar en `GET /stores/available` y existir en el marketplace. Si ya estaba "
     "incorporada responde 200 con su estado. Reutiliza los inventarios ya ingeridos: no "
     "descarga a los proveedores de nuevo.",
     responses={
         200: {"model": StoreOut, "description": "La tienda ya estaba incorporada"},
-        404: {"model": ErrorOut, "description": "La tienda no existe en el marketplace"},
+        404: {
+            "model": ErrorOut,
+            "description": "La tienda no está disponible para incorporar o no existe en el marketplace",
+        },
         502: {"model": ErrorOut, "description": "No se pudo consultar el marketplace"},
     },
 )
 def add_store(body: StoreIn, response: Response):
-    engine = database()
-    current = services.find_store(engine, body.store)
-    if current is not None:
+    store, created = services.incorporate_store(database(), body.store)
+    if not created:
         response.status_code = 200
-        return services.store_summary(current)
-    if not services.store_exists(engine, body.store):
-        raise services.NotFound("La tienda no existe en el marketplace")
-    return services.store_summary(services.register_store(engine, body.store))
+    return services.store_summary(store)
 
 
 # --- Vínculos ------------------------------------------------------------------------------

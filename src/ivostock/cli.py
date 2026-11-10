@@ -1,7 +1,5 @@
 import argparse
 import json
-import os
-import random
 import time
 from pathlib import Path
 
@@ -32,15 +30,11 @@ def parser():
     p.add_argument("url")
     p = commands.add_parser("provider-disable")
     p.add_argument("provider", type=int)
-    p = commands.add_parser("store-add", help="Incorporar una tienda e importar su catálogo")
-    p.add_argument("store")
-    p.add_argument(
-        "--feed",
-        type=Path,
-        default=Path(os.getenv("CATALOG_FEED", "data/feeds/celesa.csv")),
-        help="Inventario del que el simulador toma la muestra si la tienda no existe",
+    p = commands.add_parser(
+        "store-add",
+        help="Incorporar una tienda existente e importar su catálogo (no la crea; ver provisionar_tiendas.py)",
     )
-    p.add_argument("--sample", type=float, default=0.5, help="Fracción de SKU distintos")
+    p.add_argument("store")
     p.add_argument("--wait", action="store_true", help="Importar en este proceso")
     p = commands.add_parser("ingest")
     p.add_argument("provider", type=int)
@@ -113,29 +107,11 @@ def control_get(path):
     return response.json()
 
 
-def sample_catalog(store, feed, fraction):
-    """Simplificación del POC: el simulador crea la tienda con una muestra del inventario."""
-    if not 0 < fraction <= 1:
-        raise ValueError("sample debe estar entre 0 y 1")
-    if not feed.is_file():
-        raise ValueError(f"No existe el inventario {feed} para preparar la tienda")
-    skus = sorted(parse(feed.read_bytes()).stock)
-    chosen = sorted(random.Random(store).sample(skus, int(len(skus) * fraction)))
-    return [
-        {"id": f"ITEM{n:06}", "sku": sku, "available_quantity": 0}
-        for n, sku in enumerate(chosen, 1)
-    ]
-
-
 def add_store(engine, args):
-    if not control_get(f"/admin/stores/{args.store}/summary")["exists"]:
-        control(
-            "/admin/seed",
-            {"store": args.store, "items": sample_catalog(args.store, args.feed, args.sample)},
-        )
+    """Incorpora una tienda existente (como `POST /stores`); el aprovisionamiento es aparte."""
+    store, _ = services.incorporate_store(engine, args.store)
     if args.wait:
         return services.add_store(engine, args.store)
-    store = services.register_store(engine, args.store)
     return {
         "store": args.store,
         "status": "importing" if store["import_finished_at"] is None else store["status"],

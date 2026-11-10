@@ -31,6 +31,14 @@ docker compose up --build -d --wait
 docker compose ps
 ```
 
+Las tiendas del marketplace simulado se crean aparte, con el inventario configurado en `data/feeds/celesa.csv` (ver [Datos y configuración](#datos-y-configuración)):
+
+```sh
+make provision    # o: docker compose run --rm cli python scripts/provisionar_tiendas.py
+```
+
+Es idempotente: sólo crea las tiendas que faltan, y siempre con la misma muestra. Para agregar una tienda, sumarla al final de `MARKETPLACE_STORES` en `.env` y repetir el comando.
+
 También se puede ejecutar `make up`. La configuración inicial genera secretos aleatorios en `.env`, agrega las claves que falten y no sobrescribe valores existentes. Los volúmenes conservan PostgreSQL y snapshots. `docker compose down` apaga sin borrarlos; para empezar de cero sin perder una corrida anterior, usar otro `COMPOSE_PROJECT_NAME`. Si el puerto 5432 ya está ocupado por un PostgreSQL local, definir `POSTGRES_HOST_PORT=5433` en `.env`.
 
 | Servicio | Función |
@@ -66,14 +74,15 @@ Es la base de la interfaz: los mismos servicios que la CLI, expuestos con sesió
 | `POST /providers` | Alta: descarga la fuente y devuelve SKU, tasa y alerta de errores de parseo, muestra, próxima ingesta y sugerencias por tienda |
 | `GET /providers` | Lista (sin la URL) |
 | `POST /providers/{id}/disable` | Baja: lleva a cero sus vínculos antes de desactivar (202) |
-| `POST /stores` | Incorpora una tienda existente en el marketplace e importa su catálogo en segundo plano |
+| `GET /stores/available` | Tiendas con credenciales preconfiguradas (`MARKETPLACE_STORES`) y si ya fueron incorporadas |
+| `POST /stores` | Incorpora una tienda disponible que existe en el marketplace e importa su catálogo en segundo plano; nunca la crea |
 | `GET /stores` | Tiendas con `processed`, `total` y `progress_percent` de la importación |
 | `GET /providers/{id}/suggestions?store=T1&sku=&limit=&positive_only=` | Publicaciones sugeridas desde el último inventario aceptado, sin descargar nada |
 | `POST /providers/{id}/approve` | Aprueba `{"store": "T1", "all": true}`, `{"items": [...]}` o `{"count": N}`; con `positive_only` opcional |
 | `GET /links`, `GET /links/summary` | Vínculos paginados (`limit` hasta 100 y `next_offset`) y contadores, con filtro `store` |
 | `POST /links/{id}/off`, `POST /links/{id}/resume` | Apagar (202) y reanudar un vínculo fallido |
 
-Los errores son `{"detail": "..."}`: 404 si no existe, 409 si choca con el estado actual (nombre repetido, publicación ya asignada, catálogo aún importándose, ya dado de baja), 422 si la entrada o la fuente son inválidas, 502 si falla la fuente o el marketplace y 500 sin detalle ante un fallo interno. Para incorporar una segunda tienda con el inventario ya ingerido basta `POST /stores`, esperar `catalog_imported` y aprobar contra el mismo proveedor: no se descarga la fuente otra vez. Decisiones en el [ADR-0011](docs/adr/0011-api-de-configuracion.md).
+Los errores son `{"detail": "..."}`: 404 si no existe, 409 si choca con el estado actual (nombre repetido, publicación ya asignada, catálogo aún importándose, ya dado de baja), 422 si la entrada o la fuente son inválidas, 502 si falla la fuente o el marketplace y 500 sin detalle ante un fallo interno. Para incorporar una segunda tienda con el inventario ya ingerido basta `POST /stores`, esperar `catalog_imported` y aprobar contra el mismo proveedor: no se descarga la fuente otra vez y una sola corrida posterior actualiza ambas tiendas. Una tienda fuera de `GET /stores/available` o inexistente en el marketplace responde 404 con un mensaje distinto en cada caso. Decisiones en el [ADR-0011](docs/adr/0011-api-de-configuracion.md).
 
 ## Simplificaciones del POC
 
@@ -81,9 +90,9 @@ Los errores son `{"detail": "..."}`: 404 si no existe, 409 si choca con el estad
 - **Catálogo sintético.** Las publicaciones se generan con SKU tomados del feed real; sus atributos no son reales y permanecen estáticos.
 - **Fuente real archivada.** Celesa se reproduce desde un snapshot archivado y servido localmente por HTTP, no desde el endpoint vivo. Las variantes de cambios y fallas son sintéticas y se identifican como tales.
 - **Sin interfaz gráfica todavía.** La sesión `usuario>` imita al frontend con las mismas cuentas de operador que la API (RF-01, ver [Cuentas de operador](#cuentas-de-operador)). La API expone `GET /health`, la autenticación (`/auth/*`) y la [API de configuración](#api-de-configuración); la interfaz gráfica (RF-25) sigue pendiente del MVP.
-- **Tienda generada al darla de alta.** `store-add` le pide al simulador una tienda con el 50 % de los SKU distintos del inventario configurado (`CATALOG_FEED`), todas con stock cero. En producción la tienda ya existiría.
+- **Tiendas aprovisionadas aparte.** `scripts/provisionar_tiendas.py` crea en el simulador las tiendas de `MARKETPLACE_STORES` (T1 y T2) con el 50 % de los SKU distintos del inventario configurado (`CATALOG_FEED`), con la mitad de esa muestra común a todas y el resto propio de cada una, y todas con stock cero. En producción las tiendas ya existirían: la aplicación (API, `store-add` y la sesión de usuario) sólo incorpora las que ya existen y nunca usa la credencial de control.
 - **Proveedor con variantes.** El servicio `provider` reproduce el archivo archivado y, en cada consulta, permuta las cantidades positivas del 40 % de los SKU. `?no-changes=true` devuelve el archivo intacto.
-- **Una tienda y un proveedor.** La segunda tienda y las mediciones de escala, consulta y disponibilidad son del MVP.
+- **Un proveedor.** Las mediciones de escala, consulta y disponibilidad son del MVP.
 - **Sin ML.** El componente se define e implementa para la Entrega 3.
 
 ## Datos y configuración
@@ -122,13 +131,17 @@ Dos terminales con el mismo `COMPOSE_PROJECT_NAME`: una de usuario y otra de bac
 
 ```text
 login                                            # operador1 y su contraseña de data/operadores.txt
-store-add T1                                     # importa el catálogo en segundo plano
+store-add T1                                     # tienda ya aprovisionada; importa su catálogo en segundo plano
 status stores
 provider-add Celesa http://provider:8081/celesa.csv
 suggest 1 T1 --limit 10 --positive-only
 approve 1 T1 --count 3600 --positive-only
 status links --store T1 --summary
 status links --store T1 --limit 2
+store-add T2                                     # segunda tienda: reutiliza el inventario ya ingerido
+status stores                                    # el worker alterna el catálogo de T1 y T2
+suggest 1 T2 --limit 10 --positive-only          # sin descargar al proveedor otra vez
+approve 1 T2 --count 3600 --positive-only
 ```
 
 En la terminal de backend:
@@ -143,7 +156,7 @@ docker compose run --rm cli ivostock schedule-now 1
 docker compose logs --no-color --timestamps publish | grep -E '"link": (1|2),'
 ```
 
-`monitor` muestra llamadas de los últimos sesenta segundos según el cliente y según el simulador, progreso del catálogo, contadores de vínculos (`awaiting_ingest`, `pending`, `failed`, `synchronized`, `changed_from_initial`) e intentos por estado. Importar 127.564 publicaciones lleva unos 22 minutos y publicar 3.600 cantidades, alrededor de una hora: la cuota es la real. El alta del proveedor es una validación; la primera ingesta vence 300 minutos después y `schedule-now` la adelanta por el circuito normal.
+`monitor` muestra llamadas de los últimos sesenta segundos según el cliente y según el simulador, progreso del catálogo, contadores de vínculos (`awaiting_ingest`, `pending`, `failed`, `synchronized`, `changed_from_initial`) e intentos por estado. Importar 127.564 publicaciones lleva unos 22 minutos por tienda (con dos tiendas en importación el worker las alterna y cada una avanza al ritmo de su propia cuota) y publicar 3.600 cantidades, alrededor de una hora: la cuota es la real. El alta del proveedor es una validación; la primera ingesta vence 300 minutos después y `schedule-now` la adelanta por el circuito normal.
 
 ## Recorrido manual paso a paso
 
