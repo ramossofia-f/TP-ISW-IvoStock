@@ -44,12 +44,43 @@ También se puede ejecutar `make up`. La configuración inicial genera secretos 
 
 El POC no tiene interfaz gráfica; configuración y estado se operan desde una terminal local. La interfaz autenticada es un hito del MVP.
 
+## Cuentas de operador
+
+`python scripts/configurar.py` precrea cinco operadores (`operador1` a `operador5`): los hashes quedan en `OPERATOR_ACCOUNTS` de `.env` y las contraseñas, en `data/operadores.txt`, ambos fuera de Git. El servicio `init` los copia a PostgreSQL en cada arranque. Si las cuentas ya existen no se regeneran; para rotarlas se borra `OPERATOR_ACCOUNTS` de `.env`, se ejecuta de nuevo el script y se reinicia con `docker compose up -d --wait`, lo que cierra las sesiones de las cuentas cambiadas. Decisión y alternativas en el [ADR-0010](docs/adr/0010-cuentas-y-sesiones.md).
+
+```sh
+curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"username": "operador1", "password": "CONTRASEÑA_DE_data/operadores.txt"}'
+curl -s http://localhost:8000/auth/me -H 'Authorization: Bearer TOKEN'
+curl -s -X POST http://localhost:8000/auth/logout -H 'Authorization: Bearer TOKEN'
+```
+
+Sólo `GET /health` y `POST /auth/login` no exigen sesión. La sesión dura `SESSION_TTL_MINUTES` (480 por defecto).
+
+## API de configuración
+
+Es la base de la interfaz: los mismos servicios que la CLI, expuestos con sesión de operador. La referencia completa está en [OpenAPI](http://localhost:8000/docs). No incluye comandos de ensayo ni de operación interna (`fault`, `schedule-now`, `monitor`, `compare`, `publish`).
+
+| Método y ruta | Acción |
+|---|---|
+| `POST /providers` | Alta: descarga la fuente y devuelve SKU, tasa y alerta de errores de parseo, muestra, próxima ingesta y sugerencias por tienda |
+| `GET /providers` | Lista (sin la URL) |
+| `POST /providers/{id}/disable` | Baja: lleva a cero sus vínculos antes de desactivar (202) |
+| `POST /stores` | Incorpora una tienda existente en el marketplace e importa su catálogo en segundo plano |
+| `GET /stores` | Tiendas con `processed`, `total` y `progress_percent` de la importación |
+| `GET /providers/{id}/suggestions?store=T1&sku=&limit=&positive_only=` | Publicaciones sugeridas desde el último inventario aceptado, sin descargar nada |
+| `POST /providers/{id}/approve` | Aprueba `{"store": "T1", "all": true}`, `{"items": [...]}` o `{"count": N}`; con `positive_only` opcional |
+| `GET /links`, `GET /links/summary` | Vínculos paginados (`limit` hasta 100 y `next_offset`) y contadores, con filtro `store` |
+| `POST /links/{id}/off`, `POST /links/{id}/resume` | Apagar (202) y reanudar un vínculo fallido |
+
+Los errores son `{"detail": "..."}`: 404 si no existe, 409 si choca con el estado actual (nombre repetido, publicación ya asignada, catálogo aún importándose, ya dado de baja), 422 si la entrada o la fuente son inválidas, 502 si falla la fuente o el marketplace y 500 sin detalle ante un fallo interno. Para incorporar una segunda tienda con el inventario ya ingerido basta `POST /stores`, esperar `catalog_imported` y aprobar contra el mismo proveedor: no se descarga la fuente otra vez. Decisiones en el [ADR-0011](docs/adr/0011-api-de-configuracion.md).
+
 ## Simplificaciones del POC
 
 - **Marketplace simulado.** Las tiendas son un servicio HTTP propio con cuota de 60 llamadas/minuto y errores provocables. No hay OAuth: las credenciales están preconfiguradas por entorno. Un funcionamiento correcto contra el simulador no acredita la integración productiva.
 - **Catálogo sintético.** Las publicaciones se generan con SKU tomados del feed real; sus atributos no son reales y permanecen estáticos.
 - **Fuente real archivada.** Celesa se reproduce desde un snapshot archivado y servido localmente por HTTP, no desde el endpoint vivo. Las variantes de cambios y fallas son sintéticas y se identifican como tales.
-- **Login de demostración.** La sesión `usuario>` imita al futuro frontend y valida localmente la cuenta `Admin`/`Admin` contra un hash PBKDF2 en `.env`. No hay API de login (`POST /auth/login`), cuentas individuales ni interfaz gráfica: corresponden al MVP (RF-01, RF-25). La API sólo expone `GET /health`.
+- **Sin interfaz gráfica todavía.** La sesión `usuario>` imita al frontend con las mismas cuentas de operador que la API (RF-01, ver [Cuentas de operador](#cuentas-de-operador)). La API expone `GET /health`, la autenticación (`/auth/*`) y la [API de configuración](#api-de-configuración); la interfaz gráfica (RF-25) sigue pendiente del MVP.
 - **Tienda generada al darla de alta.** `store-add` le pide al simulador una tienda con el 50 % de los SKU distintos del inventario configurado (`CATALOG_FEED`), todas con stock cero. En producción la tienda ya existiría.
 - **Proveedor con variantes.** El servicio `provider` reproduce el archivo archivado y, en cada consulta, permuta las cantidades positivas del 40 % de los SKU. `?no-changes=true` devuelve el archivo intacto.
 - **Una tienda y un proveedor.** La segunda tienda y las mediciones de escala, consulta y disponibilidad son del MVP.
@@ -90,7 +121,7 @@ También permite `--ceros`, `--corruptas` y `--deriva`, como fracciones entre ce
 Dos terminales con el mismo `COMPOSE_PROJECT_NAME`: una de usuario y otra de backend. La sesión de usuario se abre con `docker compose run --rm user`; los comandos siguientes se escriben en `usuario>`:
 
 ```text
-login                                            # Admin / Admin
+login                                            # operador1 y su contraseña de data/operadores.txt
 store-add T1                                     # importa el catálogo en segundo plano
 status stores
 provider-add Celesa http://provider:8081/celesa.csv

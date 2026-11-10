@@ -213,11 +213,7 @@ def run(args):
                 engine, args.provider, args.store, args.items, args.count, args.positive_only
             )
         case "off":
-            with engine.begin() as conn:
-                found = rows(conn, "SELECT provider_id FROM links WHERE id=:l", l=args.link)
-            if not found:
-                raise ValueError("Vínculo inexistente")
-            return services.cut(engine, found[0]["provider_id"], args.link)
+            return services.cut_link(engine, args.link)
         case "resume":
             return services.resume(engine, args.link)
         case "status":

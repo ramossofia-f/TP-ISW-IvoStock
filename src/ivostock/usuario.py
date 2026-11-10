@@ -1,17 +1,15 @@
-"""Sesión de usuario del POC: imita las acciones del futuro frontend.
+"""Sesión de usuario: imita las acciones del frontend.
 
-El login se valida localmente contra una cuenta de demostración cuyo hash está en
-el entorno. La API autenticada con `POST /auth/login` corresponde al MVP (RF-01).
+El login usa las mismas cuentas de operador que la API (`POST /auth/login`, RF-01): se
+verifica contra la tabla `users` con `ivostock.auth`.
 """
 
 import getpass
-import hashlib
-import hmac
 import json
-import os
 import shlex
 
-from ivostock import cli
+from ivostock import auth, cli
+from ivostock.db import database
 from ivostock.logs import configurar
 
 USER_COMMANDS = {
@@ -31,25 +29,10 @@ HELP = (
 )
 
 
-def password_hash(password, salt, iterations=200_000):
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), iterations)
-    return f"pbkdf2_sha256${iterations}${salt}${digest.hex()}"
-
-
-def verify(username, password, env=os.environ):
-    expected_user = env.get("DEMO_USERNAME", "")
-    stored = env.get("DEMO_PASSWORD_HASH", "")
-    try:
-        _, iterations, salt, _ = stored.split("$")
-        candidate = password_hash(password, salt, int(iterations))
-    except ValueError:
-        return False
-    return hmac.compare_digest(username, expected_user) & hmac.compare_digest(candidate, stored)
-
-
 class Session:
-    def __init__(self, ask=input, ask_secret=getpass.getpass):
+    def __init__(self, ask=input, ask_secret=getpass.getpass, engine=None):
         self.user = None
+        self.engine = engine
         self.ask = ask
         self.ask_secret = ask_secret
 
@@ -68,10 +51,18 @@ class Session:
             return {"help": HELP}
         if command == "login":
             username = self.ask("Usuario: ")
-            if not verify(username, self.ask_secret("Contraseña: ")):
+            password = self.ask_secret("Contraseña: ")
+            try:
+                operator = auth.authenticate(self.engine or database(), username, password)
+            except Exception as exc:  # Sin base no hay login; no se expone el detalle.
+                return {
+                    "status": "error",
+                    "error": f"No se pudo verificar la cuenta ({type(exc).__name__})",
+                }
+            if operator is None:
                 return {"status": "rejected", "error": "Usuario o contraseña incorrectos"}
-            self.user = username
-            return {"status": "authenticated", "demo_login": True}
+            self.user = operator["username"]
+            return {"status": "authenticated", "user": self.user}
         if command == "logout":
             self.user = None
             return {"status": "logged_out"}

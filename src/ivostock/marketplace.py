@@ -6,6 +6,7 @@ import httpx
 
 from ivostock.config import Settings
 from ivostock.db import execute, execute_many, ownership, rows
+from ivostock.errors import UpstreamError
 from ivostock.failpoints import checkpoint
 from ivostock.quota import reserve
 
@@ -21,6 +22,24 @@ def market_request(engine, store, method, path, **kwargs):
             headers={"Authorization": f"Bearer {cfg.simulator_token}"},
             **kwargs,
         )
+
+
+def store_exists(engine, store):
+    """Sondea la tienda con una lectura mínima por la API de negocio (consume una llamada de cuota).
+
+    Evita registrar una tienda que el marketplace no conoce: su importación fallaría para siempre.
+    """
+    try:
+        response = market_request(
+            engine, store, "GET", f"/stores/{store}/items", params={"limit": 1}
+        )
+    except httpx.HTTPError:
+        raise UpstreamError("No se pudo consultar el marketplace") from None
+    if response.status_code == 200:
+        return True
+    if response.status_code == 404:
+        return False
+    raise UpstreamError(f"El marketplace respondió HTTP {response.status_code}")
 
 
 def register_store(engine, store):
