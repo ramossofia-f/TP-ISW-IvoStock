@@ -103,6 +103,11 @@ class StoreIn(Strict):
     store: StoreId = Field(description="Identificador de la tienda en el marketplace")
 
 
+class AvailableStore(BaseModel):
+    id: str
+    incorporated: bool = Field(description="Ya está incorporada a la aplicación")
+
+
 class StoreOut(BaseModel):
     id: str
     status: str

@@ -62,6 +62,7 @@ def main():
         "TASK_LEASE_SECONDS": "30",
         "CATALOG_FEED": "data/feeds/celesa.csv",
         "SESSION_TTL_MINUTES": "480",
+        "MARKETPLACE_STORES": "T1,T2",
     }
     operators_created = "OPERATOR_ACCOUNTS" not in current
     if operators_created:

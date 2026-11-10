@@ -12,25 +12,9 @@ from ivostock.api_models import LinkOut, ProviderOut
 from ivostock.db import execute, rows
 from ivostock.errors import Conflict, NotFound, ServiceError, UpstreamError
 from ivostock.publisher import publish_once
-from tests.helpers import admin, drain, import_catalogs, seed
+from tests.helpers import admin, create_provider, drain, import_catalogs, links, seed
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture
-def api(engine, operators):
-    from ivostock.main import app
-
-    client = TestClient(app)
-    login = client.post("/auth/login", json={"username": "ana", "password": "clave-ana"})
-    client.headers["Authorization"] = "Bearer " + login.json()["token"]
-    return client
-
-
-def create_provider(api, feed_server, name="Proveedor"):
-    response = api.post("/providers", json={"name": name, "url": feed_server["url"]})
-    assert response.status_code == 201, response.text
-    return response.json()["id"]
 
 
 def add_store(api, engine, store="T1", items=3):
@@ -56,11 +40,6 @@ def linked(api, engine, feed_server, items=3, publish=True):
     if publish:
         drain(engine)
     return provider
-
-
-def links(engine):
-    with engine.begin() as conn:
-        return rows(conn, "SELECT * FROM links ORDER BY id")
 
 
 def free_port():
@@ -177,11 +156,25 @@ def test_disable_unknown_provider_and_bad_ids(api):
 # --- Tiendas (B3) --------------------------------------------------------------------------
 
 
-def test_unknown_marketplace_store_is_rejected_and_not_registered(api, engine):
-    response = api.post("/stores", json={"store": "T9"})
-    assert response.status_code == 404
-    assert response.json() == {"detail": "La tienda no existe en el marketplace"}
+def test_stores_outside_the_configured_list_or_missing_in_the_marketplace_are_rejected(api, engine):
+    unlisted = api.post("/stores", json={"store": "T9"})
+    assert unlisted.status_code == 404
+    assert unlisted.json() == {"detail": "La tienda no está disponible para incorporar"}
+    unprovisioned = api.post("/stores", json={"store": "T3"})
+    assert unprovisioned.status_code == 404
+    assert unprovisioned.json() == {"detail": "La tienda no existe en el marketplace"}
     assert api.get("/stores").json() == []
+
+
+def test_available_stores_list_the_configured_ones_and_their_state(api, engine):
+    seed("T1", 3)
+    assert api.get("/stores/available").json() == [
+        {"id": "T1", "incorporated": False},
+        {"id": "T2", "incorporated": False},
+        {"id": "T3", "incorporated": False},
+    ]
+    api.post("/stores", json={"store": "T1"})
+    assert api.get("/stores/available").json()[0] == {"id": "T1", "incorporated": True}
 
 
 def test_add_store_reports_import_progress_until_complete(api, engine):
@@ -496,6 +489,7 @@ OPERATIONS = {
     ("get", "/providers/{provider_id}/suggestions"),
     ("post", "/providers/{provider_id}/approve"),
     ("get", "/stores"),
+    ("get", "/stores/available"),
     ("post", "/stores"),
     ("get", "/links"),
     ("get", "/links/summary"),

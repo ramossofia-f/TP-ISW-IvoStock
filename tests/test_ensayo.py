@@ -1,10 +1,9 @@
 import random
 from collections import Counter
 
-import pytest
 from fastapi.testclient import TestClient
 
-from ivostock import auth, cli, proveedor
+from ivostock import auth, proveedor
 from ivostock.usuario import Session
 
 FEED = "SKU;stock\n" + "".join(f"A{n:03};{n % 7}\n" for n in range(200))
@@ -35,19 +34,6 @@ def test_provider_service_serves_variants_and_archived_bytes(tmp_path, monkeypat
     assert client.get("/otro.csv").status_code == 404
     assert client.get("/..%2F.env").status_code == 404
     assert (tmp_path / "celesa.csv").read_text(encoding="utf-8") == FEED
-
-
-def test_store_sample_is_half_of_distinct_skus_with_zero_stock(tmp_path):
-    feed = tmp_path / "feed.csv"
-    feed.write_text(FEED + "A000;9\n", encoding="utf-8")
-    items = cli.sample_catalog("T1", feed, 0.5)
-    assert len(items) == 100
-    assert [i["id"] for i in items[:2]] == ["ITEM000001", "ITEM000002"]
-    assert {i["available_quantity"] for i in items} == {0}
-    assert len({i["sku"] for i in items}) == 100
-    assert items == cli.sample_catalog("T1", feed, 0.5)
-    with pytest.raises(ValueError):
-        cli.sample_catalog("T1", tmp_path / "falta.csv", 0.5)
 
 
 def test_user_session_requires_login_and_hides_backend_commands(monkeypatch):

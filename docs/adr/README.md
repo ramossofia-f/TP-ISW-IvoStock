@@ -15,5 +15,6 @@ Los ADRs explican contexto, alternativas, decisión, consecuencias y comprobaci�
 | [0009](0009-catalogo-en-segundo-plano.md) | Importación de catálogo en segundo plano con punto de control |
 | [0010](0010-cuentas-y-sesiones.md) | Cuentas de operador precreadas y sesiones en PostgreSQL |
 | [0011](0011-api-de-configuracion.md) | API de configuración sobre `services` con errores tipados |
+| [0012](0012-tiendas-aprovisionadas-y-rotacion.md) | Tiendas aprovisionadas fuera de la aplicación y rotación de la importación |
 
 Las mediciones se registran en la [evidencia E2](../entregas/ENTREGA-2.md). ML está pendiente de definición para el MVP.
