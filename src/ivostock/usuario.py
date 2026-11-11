@@ -54,6 +54,12 @@ class Session:
             password = self.ask_secret("Contraseña: ")
             try:
                 operator = auth.authenticate(self.engine or database(), username, password)
+            except auth.LoginBlocked as blocked:
+                minutes = -(-blocked.retry_after // 60)
+                return {
+                    "status": "blocked",
+                    "error": f"Demasiados intentos fallidos. Reintentar en {minutes} min.",
+                }
             except Exception as exc:  # Sin base no hay login; no se expone el detalle.
                 return {
                     "status": "error",

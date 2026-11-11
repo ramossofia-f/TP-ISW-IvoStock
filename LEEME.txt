@@ -1,0 +1,6 @@
+Copiar estos archivos encima de la raíz del repo (respetan sus rutas) y BORRAR a mano:
+  main.py            (raíz, huérfano)
+  ADR-0010.md        (raíz, suelto; ahora es docs/adr/0013-interfaz-estatica.md)
+  static/            (raíz; ahora vive en src/ivostock/static/)
+  git rm --cached .DS_Store   (y borrar el archivo)
+El Dockerfile incluido es el original del main: descarta tu cambio local "COPY static ./static".

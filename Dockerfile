@@ -11,7 +11,7 @@ COPY migrations ./migrations
 COPY scripts ./scripts
 COPY tests ./tests
 COPY docs ./docs
-COPY README.md CLAUDE.md ./
+COPY README.md GUIA-DESARROLLO.md ./
 RUN useradd --create-home app && chown -R app:app /work
 USER app
 CMD ["ivostock", "--help"]
