@@ -26,3 +26,6 @@ venv/
 *.egg-info/
 dist/
 build/
+
+# Sistema
+.DS_Store

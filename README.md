@@ -44,13 +44,13 @@ También se puede ejecutar `make up`. La configuración inicial genera secretos 
 | Servicio | Función |
 |---|---|
 | `postgres`, `minio` | Estado, cola y cuota; snapshots inmutables |
-| `api` | [health](http://localhost:8000/health) y [OpenAPI](http://localhost:8000/openapi.json) |
+| `api` | [Interfaz de configuración](http://localhost:8000/) y [health](http://localhost:8000/health); el esquema OpenAPI exige sesión (`GET /openapi.json`) |
 | `simulator` | Marketplace simulado: [health](http://localhost:8001/health) y [OpenAPI](http://localhost:8001/openapi.json) |
 | `provider` | Proveedor de ensayo en `http://localhost:8081/ARCHIVO.csv` (`http://provider:8081` dentro de Docker) |
 | `ingest`, `compare`, `publish`, `catalog` | Workers independientes: ingesta, comparación, publicación e importación de catálogo |
 | `user`, `cli` | Perfil `tools`: sesión de usuario y CLI de backend, con `docker compose run --rm` |
 
-El POC no tiene interfaz gráfica; configuración y estado se operan desde una terminal local. La interfaz autenticada es un hito del MVP.
+La interfaz de configuración (RF-25) se sirve desde la propia API en <http://localhost:8000/>: se ingresa con una cuenta de `data/operadores.txt` (ver [Cuentas de operador](#cuentas-de-operador)) y permite dar de alta y baja proveedores, incorporar tiendas, aprobar vínculos, apagarlos o reanudarlos y seguir las corridas de ingesta. Es HTML y JavaScript estáticos, sin build ([ADR-0013](docs/adr/0013-interfaz-estatica.md)). La CLI y la sesión `usuario>` siguen disponibles para ensayo y operación.
 
 ## Cuentas de operador
 
@@ -63,11 +63,11 @@ curl -s http://localhost:8000/auth/me -H 'Authorization: Bearer TOKEN'
 curl -s -X POST http://localhost:8000/auth/logout -H 'Authorization: Bearer TOKEN'
 ```
 
-Sólo `GET /health` y `POST /auth/login` no exigen sesión. La sesión dura `SESSION_TTL_MINUTES` (480 por defecto).
+Sólo `GET /health` y `POST /auth/login` funcionan sin sesión entre los endpoints de la API; además, `/` y `/static/*` sirven la interfaz sin sesión porque contienen sólo la página de acceso y su código. La sesión dura `SESSION_TTL_MINUTES` (480 por defecto). Swagger UI y ReDoc están apagados y el esquema OpenAPI sólo se entrega con sesión ([ADR-0014](docs/adr/0014-contrato-privado-y-limite-de-intentos.md)). Tras `LOGIN_MAX_ATTEMPTS` (5) contraseñas erróneas de un mismo usuario en `LOGIN_WINDOW_MINUTES` (15) el login responde `429` con `Retry-After`; un acceso correcto o el paso de la ventana lo levantan.
 
 ## API de configuración
 
-Es la base de la interfaz: los mismos servicios que la CLI, expuestos con sesión de operador. La referencia completa está en [OpenAPI](http://localhost:8000/docs). No incluye comandos de ensayo ni de operación interna (`fault`, `schedule-now`, `monitor`, `compare`, `publish`).
+Es la base de la interfaz: los mismos servicios que la CLI, expuestos con sesión de operador. La referencia completa es el esquema OpenAPI, que se obtiene con sesión: `curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/openapi.json`. Incluye la lectura de corridas (`GET /runs`, `GET /runs/summary`). No incluye comandos de ensayo ni de operación interna (`fault`, `schedule-now`, `monitor`, `compare`, `publish`).
 
 | Método y ruta | Acción |
 |---|---|
@@ -89,7 +89,7 @@ Los errores son `{"detail": "..."}`: 404 si no existe, 409 si choca con el estad
 - **Marketplace simulado.** Las tiendas son un servicio HTTP propio con cuota de 60 llamadas/minuto y errores provocables. No hay OAuth: las credenciales están preconfiguradas por entorno. Un funcionamiento correcto contra el simulador no acredita la integración productiva.
 - **Catálogo sintético.** Las publicaciones se generan con SKU tomados del feed real; sus atributos no son reales y permanecen estáticos.
 - **Fuente real archivada.** Celesa se reproduce desde un snapshot archivado y servido localmente por HTTP, no desde el endpoint vivo. Las variantes de cambios y fallas son sintéticas y se identifican como tales.
-- **Sin interfaz gráfica todavía.** La sesión `usuario>` imita al frontend con las mismas cuentas de operador que la API (RF-01, ver [Cuentas de operador](#cuentas-de-operador)). La API expone `GET /health`, la autenticación (`/auth/*`) y la [API de configuración](#api-de-configuración); la interfaz gráfica (RF-25) sigue pendiente del MVP.
+- **Interfaz sin intentos ni cartas muertas.** La interfaz cubre proveedores, tiendas, vinculación, vínculos y el tablero de corridas sobre la [API de configuración](#api-de-configuración) (RF-25, ver [ADR-0013](docs/adr/0013-interfaz-estatica.md)); no muestra los intentos de publicación ni las dead letters, que se consultan con `status deadletters` en la CLI. La sesión `usuario>` sigue usando las mismas cuentas de operador que la API (RF-01, ver [Cuentas de operador](#cuentas-de-operador)).
 - **Tiendas aprovisionadas aparte.** `scripts/provisionar_tiendas.py` crea en el simulador las tiendas de `MARKETPLACE_STORES` (T1 y T2) con el 50 % de los SKU distintos del inventario configurado (`CATALOG_FEED`), con la mitad de esa muestra común a todas y el resto propio de cada una, y todas con stock cero. En producción las tiendas ya existirían: la aplicación (API, `store-add` y la sesión de usuario) sólo incorpora las que ya existen y nunca usa la credencial de control.
 - **Proveedor con variantes.** El servicio `provider` reproduce el archivo archivado y, en cada consulta, permuta las cantidades positivas del 40 % de los SKU. `?no-changes=true` devuelve el archivo intacto.
 - **Un proveedor.** Las mediciones de escala, consulta y disponibilidad son del MVP.

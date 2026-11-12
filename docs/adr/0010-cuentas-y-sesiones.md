@@ -16,7 +16,7 @@ Para el alta de cuentas se evaluó crearlas por la API, pero eso exigiría una c
 
 Las cuentas se precrean: `scripts/configurar.py` genera cinco operadores con contraseñas aleatorias, deja los hashes PBKDF2 en `OPERATOR_ACCOUNTS` (`.env`) y las contraseñas en `data/operadores.txt`, ambos fuera de Git. El servicio `init` copia esos hashes a la tabla `users` en cada arranque; si un hash cambió, actualiza la cuenta y cierra sus sesiones. El formato del hash usa `:` en lugar de `$` para sobrevivir a la interpolación de `.env` por Compose.
 
-`POST /auth/login` devuelve un token aleatorio de 256 bits; la tabla `sessions` guarda sólo su SHA-256 y el vencimiento (`SESSION_TTL_MINUTES`, 480 por defecto). La dependencia `require_operator` protege todo endpoint salvo `/health` y el login. La sesión `usuario>` y la API autentican con el mismo módulo `ivostock.auth`.
+`POST /auth/login` devuelve un token aleatorio de 256 bits; la tabla `sessions` guarda sólo su SHA-256 y el vencimiento (`SESSION_TTL_MINUTES`, 480 por defecto). La dependencia `require_operator` protege todo endpoint salvo `/health` y el login. La sesión `usuario>` y la API autentican con el mismo módulo `ivostock.auth`. El límite de intentos de login y el esquema OpenAPI privado se decidieron después, en el [ADR-0014](0014-contrato-privado-y-limite-de-intentos.md).
 
 ## Consecuencias
 
