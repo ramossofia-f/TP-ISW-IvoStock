@@ -18,5 +18,6 @@ Los ADRs explican contexto, alternativas, decisión, consecuencias y comprobaci�
 | [0012](0012-tiendas-aprovisionadas-y-rotacion.md) | Tiendas aprovisionadas fuera de la aplicación y rotación de la importación |
 | [0013](0013-interfaz-estatica.md) | Interfaz de configuración estática servida por la API |
 | [0014](0014-contrato-privado-y-limite-de-intentos.md) | Contrato OpenAPI privado y límite de intentos de login |
+| [0015](0015-detector-de-feeds-anomalos.md) | Detector de feeds anómalos como señal adicional de la guarda (propuesto) |
 
-Las mediciones se registran en la [evidencia E2](../entregas/ENTREGA-2.md). ML está pendiente de definición para el MVP.
+Las mediciones se registran en la [evidencia E2](../entregas/ENTREGA-2.md). El componente de ML está propuesto en el [ADR-0015](0015-detector-de-feeds-anomalos.md).
