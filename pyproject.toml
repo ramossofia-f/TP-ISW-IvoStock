@@ -18,6 +18,9 @@ ivostock = "ivostock.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.9,<1"]
+ml = [
+    "scikit-learn>=1.5,<2",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

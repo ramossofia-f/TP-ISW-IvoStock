@@ -1,0 +1,97 @@
+{
+  "variables": [
+    "D",
+    "Z",
+    "errores",
+    "variacion",
+    "cola",
+    "cambios",
+    "ks"
+  ],
+  "medias": [
+    0.0889792839,
+    0.1339784186,
+    0.0396600161,
+    -0.0889792839,
+    0.3076612471,
+    0.2884090194,
+    0.1444363432
+  ],
+  "escalas": [
+    0.1245112595,
+    0.2448054822,
+    0.108493789,
+    0.1245112595,
+    0.3946073658,
+    0.2201292873,
+    0.2412867624
+  ],
+  "coeficientes": [
+    2.2418088518,
+    1.8778550251,
+    6.2806048794,
+    -2.2418088518,
+    5.9595401606,
+    0.5564368328,
+    2.3229808832
+  ],
+  "intercepto": 5.3220292979,
+  "semilla": 15,
+  "por_escenario": 300,
+  "version": "195c1c6cfe4e",
+  "umbral": 0.029613914,
+  "evaluacion": {
+    "escenarios": {
+      "estable": {
+        "etiqueta": 0,
+        "ejemplos": 300,
+        "cuarentena_guarda": 0.0,
+        "cuarentena_combinada": 0.0033
+      },
+      "agotamiento_masivo": {
+        "etiqueta": 0,
+        "ejemplos": 300,
+        "cuarentena_guarda": 0.9367,
+        "cuarentena_combinada": 0.9367
+      },
+      "depuracion": {
+        "etiqueta": 0,
+        "ejemplos": 300,
+        "cuarentena_guarda": 0.5833,
+        "cuarentena_combinada": 0.5833
+      },
+      "truncado_leve": {
+        "etiqueta": 1,
+        "ejemplos": 300,
+        "cuarentena_guarda": 0.1533,
+        "cuarentena_combinada": 1.0
+      },
+      "truncado": {
+        "etiqueta": 1,
+        "ejemplos": 300,
+        "cuarentena_guarda": 1.0,
+        "cuarentena_combinada": 1.0
+      },
+      "ceros_masivos": {
+        "etiqueta": 1,
+        "ejemplos": 300,
+        "cuarentena_guarda": 1.0,
+        "cuarentena_combinada": 1.0
+      },
+      "corrupto": {
+        "etiqueta": 1,
+        "ejemplos": 300,
+        "cuarentena_guarda": 1.0,
+        "cuarentena_combinada": 1.0
+      }
+    },
+    "defectuosas": {
+      "cuarentena_guarda": 0.7883,
+      "cuarentena_combinada": 1.0
+    },
+    "normales": {
+      "cuarentena_guarda": 0.5067,
+      "cuarentena_combinada": 0.5078
+    }
+  }
+}
