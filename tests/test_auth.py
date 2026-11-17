@@ -13,7 +13,7 @@ from ivostock import auth
 from ivostock.db import execute, rows
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC = {"/health", "/auth/login", "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+PUBLIC = {"/health", "/auth/login"}
 
 
 def load_configurar():
@@ -284,3 +284,97 @@ def test_user_session_uses_the_same_accounts_as_the_api(engine, operators):
     assert session.handle("login")["status"] == "rejected"
     assert session.handle("login") == {"status": "authenticated", "user": "ana"}
     assert session.handle("status providers") == []
+
+
+# --- Esquema OpenAPI y documentación interactiva (ADR-0014) ---------------------------------
+
+
+@pytest.mark.integration
+def test_api_contract_is_not_public(client):
+    for path in ("/docs", "/redoc", "/docs/oauth2-redirect"):
+        assert client.get(path).status_code == 404, path
+    assert client.get("/openapi.json").status_code == 401
+    assert client.get("/openapi.json", headers=headers("inventado")).status_code == 401
+    token = login(client).json()["token"]
+    schema = client.get("/openapi.json", headers=headers(token))
+    assert schema.status_code == 200 and "/auth/login" in schema.json()["paths"]
+    assert "/openapi.json" not in schema.json()["paths"]
+
+
+# --- Límite de intentos de login (ADR-0014) ------------------------------------------------
+
+
+def fail(client, username="ana", times=1):
+    return [login(client, username, "mal").status_code for _ in range(times)]
+
+
+@pytest.mark.integration
+def test_login_is_blocked_after_too_many_failures(client):
+    assert fail(client, times=5) == [401] * 5
+    blocked = login(client, "ana", "clave-ana")  # ni la clave correcta entra durante el bloqueo
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"].startswith("Demasiados intentos")
+    assert 0 < int(blocked.headers["retry-after"]) <= 15 * 60
+    assert "token" not in blocked.text and "clave" not in blocked.text
+
+
+@pytest.mark.integration
+def test_blocking_is_per_user_and_applies_to_unknown_usernames_too(client):
+    assert fail(client, times=5) == [401] * 5
+    assert login(client, "beto", "clave-beto").status_code == 200
+    assert fail(client, "nadie", times=5) == [401] * 5
+    assert login(client, "nadie", "x").status_code == 429  # igual que una cuenta real
+
+
+@pytest.mark.integration
+def test_success_clears_the_failure_counter(client):
+    assert fail(client, times=4) == [401] * 4
+    assert login(client).status_code == 200
+    assert fail(client, times=4) == [401] * 4
+    assert login(client).status_code == 200
+
+
+@pytest.mark.integration
+def test_attempts_made_while_blocked_do_not_extend_the_block(engine, client):
+    fail(client, times=5)
+    with engine.begin() as conn:
+        before = rows(conn, "SELECT count(*) AS n FROM login_failures")[0]["n"]
+    assert [login(client, "ana", "mal").status_code for _ in range(3)] == [429] * 3
+    with engine.begin() as conn:
+        assert rows(conn, "SELECT count(*) AS n FROM login_failures")[0]["n"] == before
+
+
+@pytest.mark.integration
+def test_block_expires_when_the_window_passes(engine, client):
+    fail(client, times=5)
+    assert login(client).status_code == 429
+    with engine.begin() as conn:
+        execute(conn, "UPDATE login_failures SET at=at-interval '16 minutes'")
+    assert login(client).status_code == 200
+    with engine.begin() as conn:
+        assert rows(conn, "SELECT count(*) AS n FROM login_failures")[0]["n"] == 0
+
+
+@pytest.mark.integration
+def test_limits_come_from_the_environment(client, monkeypatch):
+    monkeypatch.setenv("LOGIN_MAX_ATTEMPTS", "2")
+    assert fail(client, times=2) == [401] * 2
+    assert login(client).status_code == 429
+
+
+@pytest.mark.integration
+def test_blocked_user_does_not_affect_other_endpoints(client):
+    token = login(client, "beto", "clave-beto").json()["token"]
+    fail(client, times=5)
+    assert client.get("/health").status_code == 200
+    assert client.get("/auth/me", headers=headers(token)).status_code == 200
+
+
+@pytest.mark.integration
+def test_user_session_reports_the_block(engine, operators):
+    from ivostock.usuario import Session
+
+    session = Session(ask=lambda _: "ana", ask_secret=lambda _: "mal", engine=engine)
+    assert [session.handle("login")["status"] for _ in range(5)] == ["rejected"] * 5
+    answer = session.handle("login")
+    assert answer["status"] == "blocked" and "Demasiados intentos" in answer["error"]

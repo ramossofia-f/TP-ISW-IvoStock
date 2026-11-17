@@ -49,13 +49,28 @@ Operator = Annotated[dict, Depends(require_operator)]
     "/login",
     summary="Iniciar sesión",
     description="Devuelve un token para `Authorization: Bearer`. Usuario inexistente, inactivo o "
-    "contraseña errónea producen la misma respuesta.",
-    responses={401: {"model": ErrorOut, "description": "Usuario o contraseña incorrectos"}},
+    "contraseña errónea producen la misma respuesta. Tras varios intentos fallidos del mismo usuario "
+    "responde 429 durante un tiempo.",
+    responses={
+        401: {"model": ErrorOut, "description": "Usuario o contraseña incorrectos"},
+        429: {
+            "model": ErrorOut,
+            "description": "Demasiados intentos fallidos; `Retry-After` indica los segundos",
+        },
+    },
 )
 async def login(body: Login):
     engine = database()
     # PBKDF2 es costoso: se ejecuta fuera del bucle de eventos.
-    user = await run_in_threadpool(auth.authenticate, engine, body.username, body.password)
+    try:
+        user = await run_in_threadpool(auth.authenticate, engine, body.username, body.password)
+    except auth.LoginBlocked as blocked:
+        minutes = -(-blocked.retry_after // 60)
+        raise HTTPException(
+            429,
+            f"Demasiados intentos fallidos. Reintentá en {minutes} min.",
+            headers={"Retry-After": str(blocked.retry_after)},
+        ) from None
     if user is None:
         raise HTTPException(401, "Usuario o contraseña incorrectos")
     session = await run_in_threadpool(auth.create_session, engine, user["id"])

@@ -33,6 +33,18 @@ El [registro E2](../entregas/ENTREGA-2.md) contiene los resultados concretos. La
 
 El referente coordina el tramo, abre su pull request y responde por su criterio de salida; el apoyo revisa ese pull request. El trabajo se comparte: cuando varios integrantes resuelven algo juntos, el commit lleva a quien lo escribió como autor y a los demás como coautores. El tamaño es relativo al tramo de una semana de tres integrantes. Si un tramo se atrasa más de dos días se aplica el orden de recorte del supuesto S-08 del [PRD](../prd/PRD.md) antes de empezar el siguiente.
 
+### Estado del tramo 28/10–03/11
+
+| Resultado | Estado / evidencia |
+|---|---|
+| Cuentas precreadas y login (RF-01, RNF-11) | Implementado: cinco operadores en API y CLI, sesiones, límite de intentos y contrato OpenAPI privado ([ADR-0010](../adr/0010-cuentas-y-sesiones.md), [ADR-0014](../adr/0014-contrato-privado-y-limite-de-intentos.md)); pruebas de integración |
+| API de configuración | Implementada sobre `services` ([ADR-0011](../adr/0011-api-de-configuracion.md)); pruebas de integración por endpoint |
+| Segunda tienda reutilizando inventario | Implementada: tiendas aprovisionadas aparte, rotación de la importación ([ADR-0012](../adr/0012-tiendas-aprovisionadas-y-rotacion.md)); prueba de integración de una ingesta que actualiza T1 y T2 |
+| Interfaz de configuración (RF-25) | Implementada y estática ([ADR-0013](../adr/0013-interfaz-estatica.md)), con tablero de corridas; sin verificar en navegador |
+| Recorrido manual en Docker con el feed real, imágenes y CI remoto | Pendiente; ver el [registro del tramo](../entregas/REGISTRO-TRAMO-1.md) |
+
+Del tramo siguiente ya están el tablero de corridas y la búsqueda de sugerencias por SKU; sigue pendiente modificar un proveedor (RF-04).
+
 Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas. El componente de ML requiere una decisión específica antes de implementarlo.
 
 ## Preparación de la presentación E2

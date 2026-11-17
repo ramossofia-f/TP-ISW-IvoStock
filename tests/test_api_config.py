@@ -495,6 +495,8 @@ OPERATIONS = {
     ("get", "/links/summary"),
     ("post", "/links/{link_id}/off"),
     ("post", "/links/{link_id}/resume"),
+    ("get", "/runs"),
+    ("get", "/runs/summary"),
     ("get", "/health"),
 }
 
@@ -592,3 +594,80 @@ def test_cli_still_reports_typed_errors_by_message(engine):
     assert run("resume", "999") == (False, {"error": "Vínculo inexistente"})
     assert run("off", "999") == (False, {"error": "Vínculo inexistente"})
     assert run("provider-disable", "999") == (False, {"error": "Proveedor inexistente"})
+
+
+# --- Corridas (tablero de RF-25) -------------------------------------------------------------
+
+
+def insert_run(engine, provider, status, metrics="{}", error=None):
+    with engine.begin() as conn:
+        return rows(
+            conn,
+            "INSERT INTO runs(provider_id,status,metrics,error,finished_at)"
+            " VALUES (:p,:s,CAST(:m AS jsonb),:e,now()) RETURNING id",
+            p=provider,
+            s=status,
+            m=metrics,
+            e=error,
+        )[0]["id"]
+
+
+def test_runs_are_listed_newest_first_with_public_metrics_only(api, engine, feed_server):
+    provider = world(api, engine, feed_server)
+    page = api.get("/runs").json()
+    assert page["next_offset"] is None and len(page["items"]) == 1
+    run = page["items"][0]
+    assert run["provider_id"] == provider and run["status"] == "accepted"
+    assert run["metrics"]["sku"] == 50 and run["metrics"]["parse_alert"] is False
+    assert run["metrics"]["discarded"] == 0  # cantidad, no la lista de filas
+    assert run["finished_at"] and run["error"] is None and run["replay_of"] is None
+    # Lo interno no sale: ni la clave del snapshot ni el hash de la fuente.
+    assert "snapshot_key" not in run and "sha256" not in run["metrics"]
+    assert "sha256" not in api.get("/runs").text and "sha256/" not in api.get("/runs").text
+
+
+def test_runs_summary_counts_every_status(api, engine, feed_server):
+    provider = world(api, engine, feed_server)
+    insert_run(engine, provider, "quarantined", '{"parse_alert": true}')
+    insert_run(engine, provider, "failed", error="ConnectError")
+    insert_run(engine, provider, "interrupted", error="Proceso interrumpido")
+    insert_run(engine, provider, "running")
+    assert api.get("/runs/summary").json() == {
+        "total": 5,
+        "accepted": 1,
+        "quarantined": 1,
+        "failed": 1,
+        "interrupted": 1,
+        "running": 1,
+    }
+    failed = api.get("/runs", params={"limit": 2}).json()["items"]
+    assert [r["status"] for r in failed] == ["running", "interrupted"]
+
+
+def test_runs_are_paginated_and_filtered_by_provider(api, engine, feed_server):
+    first = world(api, engine, feed_server)
+    other = create_provider(api, feed_server, "Otro")
+    for _ in range(4):
+        insert_run(engine, other, "accepted")
+    page = api.get("/runs", params={"limit": 2}).json()
+    assert len(page["items"]) == 2 and page["next_offset"] == 2
+    last = api.get("/runs", params={"limit": 2, "offset": 4}).json()
+    assert len(last["items"]) == 1 and last["next_offset"] is None
+    only_first = api.get("/runs", params={"provider": first}).json()["items"]
+    assert [r["provider_id"] for r in only_first] == [first]
+    assert api.get("/runs/summary", params={"provider": other}).json()["total"] == 4
+
+
+def test_runs_validate_parameters_and_unknown_providers(api):
+    assert api.get("/runs", params={"provider": 999}).status_code == 404
+    assert api.get("/runs/summary", params={"provider": 999}).status_code == 404
+    for params in ({"limit": 0}, {"limit": 101}, {"offset": -1}, {"provider": "x"}):
+        assert api.get("/runs", params=params).status_code == 422, params
+
+
+def test_run_errors_expose_only_the_failure_type(api, engine, feed_server):
+    provider = world(api, engine, feed_server, ingest=False)
+    insert_run(engine, provider, "failed", error="ConnectError")
+    run = api.get("/runs").json()["items"][0]
+    assert run["status"] == "failed" and run["error"] == "ConnectError"
+    assert feed_server["url"] not in api.get("/runs").text

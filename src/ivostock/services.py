@@ -307,6 +307,43 @@ def list_links(engine, store=None, limit=50, offset=0):
     }
 
 
+RUN_COLUMNS = "id,provider_id,status,metrics,error,replay_of,started_at,finished_at"
+RUN_STATUSES = ("accepted", "quarantined", "failed", "interrupted", "running")
+
+
+def list_runs(engine, provider=None, limit=20, offset=0):
+    """Corridas de ingesta, la más reciente primero; `next_offset` es None en la última página.
+
+    No incluye la clave del snapshot ni el hash de la fuente: son internos.
+    """
+    with engine.begin() as conn:
+        found = rows(
+            conn,
+            f"SELECT {RUN_COLUMNS} FROM runs WHERE CAST(:p AS bigint) IS NULL OR provider_id=:p"
+            " ORDER BY id DESC LIMIT :n OFFSET :o",
+            p=provider,
+            n=limit + 1,
+            o=offset,
+        )
+    return {
+        "items": [dict(r) for r in found[:limit]],
+        "next_offset": offset + limit if len(found) > limit else None,
+    }
+
+
+def runs_summary(engine, provider=None):
+    """Cantidad de corridas por estado (y el total), de un proveedor o de todos."""
+    filters = ", ".join(f"count(*) FILTER (WHERE status='{s}') AS {s}" for s in RUN_STATUSES)
+    with engine.begin() as conn:
+        found = rows(
+            conn,
+            f"SELECT count(*) AS total, {filters} FROM runs"
+            " WHERE CAST(:p AS bigint) IS NULL OR provider_id=:p",
+            p=provider,
+        )
+    return dict(found[0])
+
+
 def catalog_progress(processed, total, finished):
     """Porcentaje de importación del catálogo; 100 al terminar aunque el total sea desconocido."""
     if finished:

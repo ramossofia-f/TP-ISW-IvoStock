@@ -47,7 +47,7 @@ macOS 26.6.2 (Apple M4) con Docker Desktop 29.2.1 y contenedores Linux aarch64. 
 | Pruebas unitarias e integración dentro de Docker | 79 aprobadas en 31,80 s. Suma reanudación del catálogo tras matar su worker, aprobación previa a la primera ingesta, baja de proveedor (RF-20), fuente inaccesible (RF-23) y credencial revocada (RF-24) |
 | Análisis estático, documentación y secretos | Aprobados; 17 documentos, 51 IDs de requisitos/casos y nueve ADRs |
 | Arranque completo | Nueve servicios saludables, incluidos `catalog` y `provider` |
-| Login de demostración | Comandos rechazados sin sesión; `Admin`/`Admin` autenticado |
+| Login de demostración | Comandos rechazados sin sesión; `Admin`/`Admin` autenticado. Evidencia histórica de E2: esa cuenta se retiró y hoy se usan cuentas de operador precreadas ([ADR-0010](../adr/0010-cuentas-y-sesiones.md)) |
 | Alta de tienda | Muestra de 127.564 publicaciones (50 % de 255.129 SKU distintos) con stock cero; el alta devuelve el control y la importación sigue en segundo plano |
 | Cuota durante la importación | Máximo observado de 60 llamadas en 60 segundos según el cliente y según el simulador. La ventana móvil admite ráfagas: se observaron 59 páginas en unos 5 segundos y luego la espera hasta liberar cupo |
 | SIGKILL del worker de catálogo | Reanudó desde la última página confirmada (29.700 y luego 53.500 publicaciones); sin locks retenidos tras la caída |

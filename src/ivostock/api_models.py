@@ -202,3 +202,56 @@ class LinkOffOut(BaseModel):
 class LinkResumeOut(BaseModel):
     link: int
     status: str
+
+
+# --- Corridas ------------------------------------------------------------------------------
+
+
+class RunMetrics(BaseModel):
+    """Métricas públicas de una corrida; no incluye el hash ni la clave del snapshot."""
+
+    rows: int | None = None
+    sku: int | None = None
+    discarded: int | None = Field(None, description="Cantidad de filas descartadas")
+    parse_error_rate: float | None = None
+    parse_alert: bool | None = None
+    reused_inventory: bool | None = None
+    D: float | None = Field(None, description="Fracción de SKU de la corrida previa que ya no figura")
+    Z: float | None = Field(None, description="Fracción de SKU con stock que pasó a cero")
+    p: float | None = Field(None, description="Sospecha de 0 a 1; mayor que 0,5 manda la corrida a cuarentena")
+
+
+class RunOut(BaseModel):
+    id: int
+    provider_id: int
+    status: Literal["running", "accepted", "quarantined", "failed", "interrupted"]
+    metrics: RunMetrics
+    error: str | None = Field(description="Tipo de la falla; nunca incluye URLs ni credenciales")
+    replay_of: int | None
+    started_at: datetime
+    finished_at: datetime | None
+
+    @field_validator("metrics", mode="before")
+    @classmethod
+    def known_metrics(cls, value):
+        # Sólo las métricas declaradas: lo demás (hash, claves) queda dentro.
+        allowed = RunMetrics.model_fields
+        metrics = {k: v for k, v in (value or {}).items() if k in allowed}
+        # La corrida guarda cada fila descartada (línea y motivo); la API sólo informa cuántas.
+        if isinstance(metrics.get("discarded"), list):
+            metrics["discarded"] = len(metrics["discarded"])
+        return metrics
+
+
+class RunsPage(BaseModel):
+    items: list[RunOut]
+    next_offset: int | None = Field(description="Offset de la página siguiente; None en la última")
+
+
+class RunSummary(BaseModel):
+    total: int
+    accepted: int
+    quarantined: int
+    failed: int
+    interrupted: int
+    running: int

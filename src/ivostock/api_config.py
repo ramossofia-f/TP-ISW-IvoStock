@@ -1,4 +1,4 @@
-"""API de configuración: proveedores, tiendas y vínculos (RF-02, RF-03, RF-05..RF-09, RF-25).
+"""API de configuración: proveedores, tiendas, vínculos y corridas (RF-02, RF-03, RF-05..RF-09, RF-25).
 
 Cada endpoint delega en `ivostock.services`, la misma capa que usa la CLI. Todo el router exige
 sesión de operador. Quedan fuera a propósito los comandos de ensayo y operación interna
@@ -27,6 +27,8 @@ from ivostock.api_models import (
     ProviderCreated,
     ProviderIn,
     ProviderOut,
+    RunsPage,
+    RunSummary,
     StoreIn,
     StoreOut,
     SuggestionsOut,
@@ -261,3 +263,42 @@ def turn_off_link(link_id: LinkId):
 )
 def resume_link(link_id: LinkId):
     return services.resume(database(), link_id)
+
+
+# --- Corridas (tablero de RF-25) -------------------------------------------------------------
+
+
+@router.get(
+    "/runs/summary",
+    response_model=RunSummary,
+    tags=["runs"],
+    summary="Resumen de corridas por estado",
+    responses=NOT_FOUND,
+)
+def runs_summary(provider: Annotated[int | None, Query(ge=1, le=BIGINT_MAX)] = None):
+    engine = database()
+    if provider is not None:
+        services.require_provider(engine, provider, active=False)
+    return services.runs_summary(engine, provider)
+
+
+@router.get(
+    "/runs",
+    response_model=RunsPage,
+    tags=["runs"],
+    summary="Listar corridas de ingesta",
+    description="La más reciente primero. Sólo lectura: las corridas las dispara el horario de "
+    "cada proveedor. Para la página siguiente usar `next_offset`.",
+    responses=NOT_FOUND,
+)
+def list_runs(
+    provider: Annotated[
+        int | None, Query(ge=1, le=BIGINT_MAX, description="Filtrar por proveedor")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0, le=10_000_000)] = 0,
+):
+    engine = database()
+    if provider is not None:
+        services.require_provider(engine, provider, active=False)
+    return services.list_runs(engine, provider, limit, offset)
