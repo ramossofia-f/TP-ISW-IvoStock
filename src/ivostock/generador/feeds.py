@@ -22,11 +22,12 @@ class Parametros:
     ceros: float = 0.0
     corruptas: float = 0.0
     deriva: float = 0.0
+    bajas: float = 0.0
 
     def __post_init__(self):
         if self.skus < 1:
             raise ValueError("skus debe ser positivo")
-        for name in ("truncar", "ceros", "corruptas", "deriva"):
+        for name in ("truncar", "ceros", "corruptas", "deriva", "bajas"):
             value = getattr(self, name)
             if not math.isfinite(value) or not 0 <= value <= 1:
                 raise ValueError(f"{name} debe estar entre cero y uno")
@@ -59,8 +60,13 @@ def generar(parametros: Parametros, base: dict[str, int] | None = None) -> str:
         )
     a_cero = set(azar.sample(skus, round(len(skus) * parametros.ceros)))
     corruptas = set(azar.sample(skus, round(len(skus) * parametros.corruptas)))
+    # Bajas legítimas: SKU dispersos que dejan de figurar. Sólo consume azar si se piden, para que
+    # los escenarios sin bajas conserven sus bytes.
+    bajas = set(azar.sample(skus, round(len(skus) * parametros.bajas))) if parametros.bajas else set()
     cuerpo = []
     for sku in skus:
+        if sku in bajas:
+            continue
         if sku in corruptas:
             quantity = azar.choice(VALORES_CORRUPTOS)
         elif sku in a_cero:
@@ -78,7 +84,7 @@ def main(argv=None):
     parser.add_argument("--base", type=Path)
     parser.add_argument("--semilla", type=int, default=42)
     parser.add_argument("--skus", type=int, default=1000)
-    for name in ("truncar", "ceros", "corruptas", "deriva"):
+    for name in ("truncar", "ceros", "corruptas", "deriva", "bajas"):
         parser.add_argument("--" + name, type=float, default=0)
     args = parser.parse_args(argv)
     parametros = Parametros(

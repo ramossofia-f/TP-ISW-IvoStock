@@ -123,7 +123,18 @@ uv run python -m ivostock.generador.feeds --salida data/feeds/demo.csv --skus 10
 uv run python -m ivostock.generador.feeds --base data/feeds/demo.csv --salida data/feeds/truncado.csv --truncar 0.3 --semilla 7
 ```
 
-También permite `--ceros`, `--corruptas` y `--deriva`, como fracciones entre cero y uno. La salida conserva el encabezado fijo `SKU;stock`; los archivos locales son entradas de preparación y generación, y los proveedores se consultan siempre por HTTP.
+También permite `--ceros`, `--corruptas`, `--deriva` y `--bajas` (SKU dispersos que dejan de figurar), como fracciones entre cero y uno. La salida conserva el encabezado fijo `SKU;stock`; los archivos locales son entradas de preparación y generación, y los proveedores se consultan siempre por HTTP.
+
+### Detector de corridas defectuosas (ML)
+
+El componente de ML ([ADR-0015](docs/adr/0015-detector-de-feeds-anomalos.md)) es una regresión logística que estima si una corrida es defectuosa a partir de variables calculadas contra el inventario previo (`ivostock.ml.variables`). Se entrena con escenarios del generador con semilla y se versiona como `src/ivostock/ml/modelo.json`; la inferencia es Python puro y no necesita scikit-learn. Para reentrenar y regenerar la [evaluación](docs/entregas/ML-EVALUACION.md):
+
+```sh
+uv run --group ml python scripts/ml_entrenar.py
+uv run --group ml python scripts/ml_entrenar.py --base data/feeds/celesa.csv   # agrega escenarios sobre el inventario real
+```
+
+La misma semilla produce el mismo modelo y el mismo reporte. El inventario real no entra al entrenamiento: sólo se evalúa sobre él y se versiona el resumen.
 
 ## Recorrido de demostración
 
