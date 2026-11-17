@@ -16,6 +16,9 @@ CAMPOS_TRAZA = (
     "http_status",
     "error",
     "user",
+    "model_version",
+    "decision_source",
+    "fallback_reason",
 )
 
 

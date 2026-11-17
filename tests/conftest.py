@@ -34,6 +34,9 @@ def infrastructure():
     os.environ["S3_BUCKET"] = "snapshots-test"
     os.environ["TASK_LEASE_SECONDS"] = "1"
     os.environ["MARKETPLACE_STORES"] = "T1,T2,T3"
+    # Nunca consultar el servicio de producción, que utiliza otra base. Los ensayos ML
+    # levantan su propio servicio TCP y habilitan su URL sólo dentro de cada prueba.
+    os.environ["ML_URL"] = ""
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
     from ivostock.storage import Snapshots
 
@@ -84,8 +87,9 @@ def engine(infrastructure):
     with db.begin() as conn:
         execute(
             conn,
-            "TRUNCATE provider_preview,providers,stores,runs,stock,catalog,links,comparison_events,tasks,attempts,dead_letters,market_calls,worker_heartbeats,sim_stores,sim_items,sim_calls,sim_faults,sessions,users,login_failures RESTART IDENTITY CASCADE",
+            "TRUNCATE ml_observations,ml_state,ml_models,provider_preview,providers,stores,runs,stock,catalog,links,comparison_events,tasks,attempts,dead_letters,market_calls,worker_heartbeats,sim_stores,sim_items,sim_calls,sim_faults,sessions,users,login_failures RESTART IDENTITY CASCADE",
         )
+        execute(conn, "INSERT INTO ml_state(id) VALUES(1)")
     return db
 
 
