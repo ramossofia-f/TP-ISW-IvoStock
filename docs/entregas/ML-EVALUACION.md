@@ -1,8 +1,9 @@
 # Evaluación del detector de corridas defectuosas
 
-**Registro histórico del clasificador binario del ADR-0015.** Fue sustituido por el detector de
-normalidad del [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md). Estas cifras no
-describen el modelo global vigente. El script anterior y sus artefactos se conservan para
+**Registro histórico del clasificador binario del ADR-0015.** El PR #18 implementa el detector de
+normalidad del [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md), pendiente
+de revisión conjunta. Estas cifras no describen ese modelo global ni son una comparación
+controlada con él: difieren conjuntos, variables y protocolos. El script anterior y sus artefactos se conservan para
 reproducir este experimento; no entrenan ni activan el detector de la aplicación.
 
 Generado por `scripts/ml_entrenar.py` ([ADR-0015](../adr/0015-detector-de-feeds-anomalos.md)). Los escenarios y sus etiquetas son sintéticos: estas cifras no acreditan el comportamiento con un proveedor real.

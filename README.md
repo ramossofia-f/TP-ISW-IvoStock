@@ -127,14 +127,16 @@ También permite `--ceros`, `--corruptas`, `--deriva` y `--bajas` (SKU dispersos
 
 ### Detector global de normalidad (ML)
 
-El componente vigente ([ADR-0016](docs/adr/0016-normalidad-global-y-aprendizaje-durable.md)) aprende
+El componente implementado ([ADR-0016 propuesto](docs/adr/0016-normalidad-global-y-aprendizaje-durable.md)) aprende
 únicamente de corridas aceptadas: OneClassSVM RBF, proveedor one-hot y siete estadísticas ya
 calculadas por ingesta. `ml` sirve la inferencia en Python puro; `ml-train` instala sklearn y
 reentrena en segundo plano. `make up` inicia ambos, sin esperar a reunir el historial.
 
-Para cada proveedor, las reglas deciden hasta que una versión entrenada incorpore diez aceptados
-suyos. Después decide ML; si no responde en un segundo total, se vuelve a las reglas. Aceptar
-deja una observación durable, independientemente de que haya decidido ML o el respaldo. El
+La guarda fija es obligatoria: p>0,5 pone en cuarentena sin consultar ML. Si pasa, el modelo
+puede agregar cuarentenas una vez que su versión incorpore diez aceptados del proveedor.
+Cuarentena = guarda o ML; ningún modelo, aprobación ni replay omite la guarda. Durante el
+calentamiento o si ML no responde en un segundo total, decide sólo la guarda. Aceptar
+deja una observación durable, incluso cuando no se pudo consultar al modelo. El
 entrenamiento no demora la publicación. Una caída conserva el modelo anterior y los pendientes.
 Al recuperar se procesa cada observación una vez; una cuarentena nunca entrena.
 
@@ -168,7 +170,9 @@ evaluación sintética del diseño vigente se reproduce con
 `uv run --group ml python scripts/ml_evaluar_normalidad.py`; el [reporte](docs/entregas/ML-NORMALIDAD-EVALUACION.md)
 declara falsas cuarentenas y detecciones sobre escenarios reservados. La
 [evaluación anterior](docs/entregas/ML-EVALUACION.md), `scripts/ml_entrenar.py` y su `modelo.json`
-pertenecen al experimento binario histórico y no activan ni evalúan el detector vigente.
+pertenecen al experimento binario histórico y no activan ni evalúan el detector implementado.
+El ADR-0016 queda propuesto hasta que lo revisen los tres integrantes; la calidad del detector
+sigue bajo revisión y no se acredita una mejora respecto de la logística con ensayos distintos.
 
 El [registro de verificación](docs/entregas/ML-NORMALIDAD-VERIFICACION.md) separa las comprobaciones
 de modelo, circuito, recuperación, privacidad y avisos de los ensayos todavía no realizados.
@@ -255,4 +259,4 @@ La integración crea y limpia exclusivamente `ivostock_test` y usa `snapshots-te
 
 El ensayo real y la interrupción del servicio PostgreSQL se ejecutan con `uv run python scripts/evaluar_poc.py --source "RUTA_AL_ORIGINAL" --captured-at "FECHA_DEL_ARCHIVO"`. Ese ensayo detiene temporalmente API y workers del proyecto, conserva los volúmenes y deja un reporte en `data/evidencia/poc.json`. Usa un proveedor y una tienda de ensayo identificados por ejecución.
 
-El [registro de E2](docs/entregas/ENTREGA-2.md) separa resultados históricos de ensayos pendientes. Las pruebas largas de disponibilidad, capacidad de interfaz y dos tiendas corresponden al MVP. El diseño vigente de ML está en el ADR-0016.
+El [registro de E2](docs/entregas/ENTREGA-2.md) separa resultados históricos de ensayos pendientes. Las pruebas largas de disponibilidad, capacidad de interfaz y dos tiendas corresponden al MVP. El diseño de ML implementado para revisión está en el ADR-0016 propuesto.
