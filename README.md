@@ -203,6 +203,69 @@ docker compose run --rm cli ivostock replay ID_CORRIDA
 
 La ingesta automática ocurre cada 300 minutos, empezando 300 minutos después del alta, y no se superpone por proveedor. Los comandos manuales no cambian el próximo vencimiento; `schedule-now` lo adelanta. Las lecturas y escrituras comparten sesenta llamadas/minuto por tienda; reiniciar conserva el consumo.
 
+## Métricas y observador de disponibilidad
+
+`make up` también levanta `metrics` en `http://localhost:8002`. El servicio toma una muestra por
+minuto y conserva siete días en PostgreSQL. Usa las consultas de operación y heartbeats existentes;
+continúa funcionando si se detiene la API principal. La pestaña **Monitoreo** de la aplicación
+muestra disponibilidad, heartbeats y p95/p99 de publicación por tienda como valores numéricos.
+No hay alertas ni notificaciones. Decisión y alternativas: [ADR-0016](docs/adr/0016-metricas-y-observador.md).
+
+Con un Bearer de operador (el mismo de la API):
+
+```sh
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8002/metrics/current
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8002/metrics/summary
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8002/metrics/history
+```
+
+`current` entrega la última muestra, su antigüedad y los heartbeats actuales. `summary` informa
+las últimas 24 horas completas, con 1.440 posiciones esperadas; incluye faltantes en el denominador
+y separa API de motor. `history` entrega las muestras individuales. `start` y `end` permiten elegir
+un período de hasta siete días: ISO-8601 con zona horaria, minutos completos, inicio inclusivo y
+fin exclusivo. No se puede incluir un minuto futuro o todavía incompleto. Los tres endpoints
+también están en el puerto 8000 y las lecturas no generan muestras.
+
+El health de los workers mantiene la tolerancia de 660 segundos que permite una ingesta larga;
+una caída puede tardar ese tiempo en verse en su disponibilidad. El health HTTP de la API no
+prueba por sí mismo el funcionamiento del navegador. El estado del proceso de métricas se
+consulta sin sesión en `/health`; para saber la frescura de sus datos se usa `current` con sesión.
+
+El observador es otro microservicio, opcional y sin PostgreSQL ni volúmenes:
+
+```sh
+docker compose --profile observer up -d --build observer
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8003/metrics
+```
+
+Cada GET consulta el estado interno y su resumen y comprueba los health HTTP de API, simulador y
+proveedor. Devuelve JSON, sin acciones de negocio ni persistencia. No inicia sesión por el usuario:
+reenvía el Bearer al servicio de métricas. Si la API principal está detenida, se puede iniciar o
+renovar sesión por `POST http://localhost:8002/auth/login` usando las mismas cuentas. La sesión
+vence a los 480 minutos por defecto; su vencimiento no interrumpe el muestreo interno.
+
+Para ejecutarlo en otra máquina, configurar `METRICS_URL`, `API_URL`, `SIMULATOR_URL` y
+`PROVIDER_URL` y ejecutar `uv run uvicorn ivostock.observer:app --host 0.0.0.0 --port 8003`.
+Las direcciones deben ser accesibles desde allí: los puertos locales de Compose están ligados
+a `127.0.0.1` y no se publican automáticamente a Internet. Dentro del perfil Compose las variables
+equivalentes son `OBSERVER_METRICS_URL`, `OBSERVER_API_URL`, `OBSERVER_SIMULATOR_URL` y
+`OBSERVER_PROVIDER_URL`. El perfil local comparte máquina y red; no se presenta como observación
+desde un host independiente.
+
+Los p95/p99 se calculan desde el origen de cada revisión hasta el primer efecto externo que
+registra el simulador. No son tiempos de intentos HTTP ni promedios de percentiles. Cada tienda
+incluye su tamaño de muestra, pendientes, reemplazos y duraciones desconocidas; sin muestras,
+los percentiles son `null`. Un valor bajo mientras faltan publicaciones no acredita RNF-02.
+Los vínculos existentes al migrar no reciben una fecha de creación inventada. La instrumentación
+de revisión del simulador conserva el primer efecto aunque se pierda su acuse y se repita el envío.
+
+Para RNF-07 mantener el sistema encendido 24 horas y consultar el observador cada minuto con una
+sesión vigente; el histórico lo persiste exclusivamente `metrics`. Al terminar, consultar
+`/metrics/summary?start=INICIO_ISO&end=FIN_ISO` y conservar el resultado de la ventana elegida como
+evidencia de entrega antes de que expire su retención. El observador no guarda archivos ni acredita
+su propia continuidad histórica. La campaña de 24 horas y el ensayo de dos tiendas/2.000 vínculos
+siguen siendo ejecuciones pendientes; las pruebas automatizadas no los sustituyen.
+
 ## Pruebas
 
 ```sh

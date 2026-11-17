@@ -4,12 +4,19 @@ import logging
 
 from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ivostock.errors import ServiceError
 
 log = logging.getLogger("ivostock.api")
+
+
+async def invalid_request(request, exc):
+    # Se comparte entre API y métricas: un cuerpo inválido puede incluir una contraseña.
+    errors = [{"type": e["type"], "loc": e["loc"], "msg": e["msg"]} for e in exc.errors()]
+    return JSONResponse({"detail": errors}, status_code=422)
 
 
 class SafeRoute(APIRoute):

@@ -497,6 +497,9 @@ OPERATIONS = {
     ("post", "/links/{link_id}/resume"),
     ("get", "/runs"),
     ("get", "/runs/summary"),
+    ("get", "/metrics/current"),
+    ("get", "/metrics/history"),
+    ("get", "/metrics/summary"),
     ("get", "/health"),
 }
 

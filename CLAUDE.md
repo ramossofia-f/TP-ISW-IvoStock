@@ -18,6 +18,7 @@ El [PRD](docs/prd/PRD.md) define el producto; el [SRD](docs/srd/SRD.md), su dise
 - Los endpoints de control del simulador son herramientas de ensayo, separados de su API de negocio.
 - Agregar decisiones estructurales como ADRs breves con alternativas y consecuencias.
 - Mantener alcance, comandos y resultados medidos coherentes. No declarar pruebas que no se ejecutaron.
+- Métricas: reutilizar `services.monitor` y los heartbeats; sólo `metrics.sample` escribe muestras por minuto, con retención de siete días. API y servicio de métricas comparten `api_metrics`. El observador sólo hace GET, sin persistencia ni alertas (ADR-0016). Los percentiles son por revisión y efecto externo, nunca por intento HTTP.
 - ML está pendiente de definición para el MVP.
 
 ## Comprobación

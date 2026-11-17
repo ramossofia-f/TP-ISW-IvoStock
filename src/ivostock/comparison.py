@@ -2,10 +2,11 @@
 
 from ivostock.db import execute, ownership, rows
 from ivostock.failpoints import checkpoint
+from ivostock.publication_metrics import requested, superseded
 
 
 def enqueue(conn, link, desired):
-    revision = link["revision"] + (desired != link["desired"])
+    revision = link["revision"] + (desired != link["desired"] or link.get("new_cut", False))
     execute(
         conn,
         "UPDATE links SET desired=:q,revision=:r WHERE id=:l",
@@ -14,12 +15,17 @@ def enqueue(conn, link, desired):
         l=link["id"],
     )
     task = rows(conn, "SELECT * FROM tasks WHERE link_id=:l", l=link["id"])
+    if revision != link["revision"]:
+        superseded(conn, link["id"], revision)
     if link["state"] != "active":
+        if desired != link["confirmed"]:
+            requested(conn, link, revision)
         return
     if desired == link["confirmed"] and not task and not link["cut_requested"]:
         return
     if task and task[0]["quantity"] == desired and task[0]["revision"] == revision:
         return
+    requested(conn, link, revision)
     execute(
         conn,
         """INSERT INTO tasks(link_id,revision,quantity,run_id) VALUES (:l,:r,:q,:run)

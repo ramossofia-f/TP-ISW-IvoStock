@@ -89,7 +89,7 @@ Las tolerancias son fijas; el puntaje es determinista. La primera corrida establ
 | RNF-04 | Con el mismo estado de entrada, repetir una corrida o notificarla varias veces no duplica pendientes ni produce escrituras adicionales. Repetir una petición tras perder su confirmación conserva el efecto absoluto | POC |
 | RNF-05 | La cola pendiente por tienda está acotada por sus vínculos no desactivados, incluyendo cortes por confirmar | POC |
 | RNF-06 | Diez cierres abruptos reproducibles, cero trabajo vigente perdido y reanudación en hasta 10 minutos con almacenes disponibles; comprobar también reinicio abrupto de PostgreSQL conservando volúmenes | POC |
-| RNF-07 | Al menos 99 % de comprobaciones funcionales exitosas por separado para interfaz/API y motor durante 24 horas, con observador externo cada minuto | MVP |
+| RNF-07 | Al menos 99 % de muestras de disponibilidad exitosas por separado para interfaz/API y motor durante 24 horas: health HTTP y vigencia de heartbeats, con estado interno persistido cada minuto durante siete días. Un observador externo consulta ese estado y los health sin generar trabajo ni persistir muestras | MVP |
 | RNF-08 | Con PostgreSQL disponible, detener API no detiene el motor; detener workers permite consultar estado persistido. PostgreSQL es un punto común de falla | POC/MVP |
 | RNF-09 | Cinco operadores autenticados a una consulta/s cada uno durante 30 minutos, sobre 2.000 vínculos y con motor activo: p95 <2 segundos | MVP |
 | RNF-10 | Secretos por entorno, nunca en Git, respuestas de configuración o logs; snapshots reales y sus derivados fuera del repositorio | POC |
@@ -99,9 +99,15 @@ Las tolerancias son fijas; el puntaje es determinista. La primera corrida establ
 | RNF-14 | Procesos configurables por entorno e imágenes construibles en CI; los datos durables residen en PostgreSQL y S3 | POC |
 | RNF-15 | Demostrar 2.000 vínculos totales, 1.000 por tienda; registrar recursos, cantidad y frecuencia de cambios sin imponer un máximo de deltas por tienda | MVP |
 | RNF-16 | OpenAPI generado para los endpoints realmente implementados de API y simulador | POC/MVP |
-| RNF-17 | Estado y registros estructurados correlacionables por corrida, vínculo, revisión e intento; health check por proceso y métricas operativas consultables | POC |
+| RNF-17 | Estado y registros estructurados correlacionables por corrida, vínculo, revisión e intento; health check por proceso y métricas operativas consultables. Servicio de métricas interno, histórico por minuto de siete días y tablero numérico autenticado; disponibilidad separada de percentiles de publicación por tienda, sin alertas | POC/MVP |
 
 La espera hasta la siguiente ingesta puede ser de cinco horas y se informa separada de RNF-02. Las mediciones registran errores, rechazos, timeouts y solicitudes sin resultado; no se usan para mejorar percentiles. El protocolo detallado está en el [SRD](../srd/SRD.md).
+
+Disponibilidad de componentes y cumplimiento de procesamiento son resultados distintos. La
+serie histórica de RNF-07 la conserva el sistema, y el observador sólo lee sus métricas y
+comprueba acceso actual. No se ejecutan cambios sintéticos por observar. Los percentiles de
+RNF-02 se presentan por tienda junto con el tamaño de muestra y las publicaciones sin resultado;
+una tienda sin publicaciones medidas no acredita el objetivo. Ver [ADR-0016](../adr/0016-metricas-y-observador.md).
 
 ## Datos, demostración y límites
 

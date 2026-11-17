@@ -19,5 +19,6 @@ Los ADRs explican contexto, alternativas, decisión, consecuencias y comprobaci�
 | [0013](0013-interfaz-estatica.md) | Interfaz de configuración estática servida por la API |
 | [0014](0014-contrato-privado-y-limite-de-intentos.md) | Contrato OpenAPI privado y límite de intentos de login |
 | [0015](0015-detector-de-feeds-anomalos.md) | Detector de feeds anómalos como señal adicional de la guarda (propuesto) |
+| [0016](0016-metricas-y-observador.md) | Métricas internas por minuto y observador de sólo lectura |
 
 Las mediciones se registran en la [evidencia E2](../entregas/ENTREGA-2.md). El componente de ML está propuesto en el [ADR-0015](0015-detector-de-feeds-anomalos.md).

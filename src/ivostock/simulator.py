@@ -108,7 +108,14 @@ class Quantity(BaseModel):
 
 
 @app.put("/stores/{store}/items/{item}/stock", dependencies=[Depends(authorize)])
-def update(store: str, item: str, payload: Quantity):
+def update(
+    store: str,
+    item: str,
+    payload: Quantity,
+    work_id: Annotated[
+        str | None, Header(alias="X-Ivo-Work", pattern=r"^[1-9][0-9]*:[1-9][0-9]*$", max_length=45)
+    ] = None,
+):
     if response := injected(store, item):
         return response
     with database().begin() as conn:
@@ -121,7 +128,25 @@ def update(store: str, item: str, payload: Quantity):
         )
         if not result:
             raise HTTPException(404, "Publicación inexistente")
-    return serialize(result[0])
+        output = serialize(result[0])
+        if work_id is not None:
+            execute(
+                conn,
+                "INSERT INTO sim_publication_effects(store_id,item_id,work_id,quantity,effect_at) "
+                "VALUES (:s,:i,:w,:q,:at) ON CONFLICT DO NOTHING",
+                s=store, i=item, w=work_id, q=payload.available_quantity,
+                at=result[0]["updated_at"],
+            )
+            first = rows(
+                conn,
+                "SELECT quantity,effect_at FROM sim_publication_effects "
+                "WHERE store_id=:s AND item_id=:i AND work_id=:w",
+                s=store, i=item, w=work_id,
+            )[0]
+            if first["quantity"] != payload.available_quantity:
+                raise HTTPException(409, "La revisión ya tiene otra cantidad")
+            output["effect_at"] = first["effect_at"]
+    return output
 
 
 class SeedItem(BaseModel):

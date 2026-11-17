@@ -56,6 +56,18 @@ El componente se define en el [ADR-0015](../adr/0015-detector-de-feeds-anomalos.
 
 Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas.
 
+### Instrumentación de disponibilidad y publicación
+
+Se implementó un servicio de métricas que reutiliza el estado operativo, persiste muestras por
+minuto durante siete días y ofrece el mismo contrato autenticado a la API y al tablero. El
+observador es otro microservicio de sólo lectura, sin histórico propio ni alertas. Los percentiles
+de efecto externo se calculan por tienda, separados de disponibilidad. Diseño y comparación con
+UptimeRobot en el [ADR-0016](../adr/0016-metricas-y-observador.md).
+
+La campaña real de 24 horas y las mediciones RNF-02/RNF-15 quedan pendientes. La instrumentación
+no se declara como evidencia de haber cumplido los umbrales. El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
+detalla las comprobaciones ejecutadas y las limitaciones.
+
 ## Preparación de la presentación E2
 
 Guion sugerido de ocho minutos: problema y contrato (1), arquitectura y datos reales (1), ingesta y vinculación (2), cambio y confirmación (1), cuarentena/dead letter/reanudación (1), corte y recuperación (1), pruebas y límites demostrados (1). Usar los comandos y el reporte reales, ocultando secretos y sin mostrar inventario privado completo. Identificar el commit probado en `main` al presentar el enlace del video y conservar las contribuciones reales del equipo.

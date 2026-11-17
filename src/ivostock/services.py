@@ -228,7 +228,7 @@ def cut(engine, provider, link_id=None):
                 raise NotFound("Proveedor inexistente")
             for link in links:
                 execute(conn, "UPDATE links SET cut_requested=TRUE WHERE id=:l", l=link["id"])
-                link = dict(link, cut_requested=True)
+                link = dict(link, cut_requested=True, new_cut=not link["cut_requested"])
                 enqueue(conn, link, 0)
             checkpoint("cut_in_transaction")
         checkpoint("cut_committed")
