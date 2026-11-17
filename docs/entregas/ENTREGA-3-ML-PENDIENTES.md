@@ -25,7 +25,24 @@ despliegue ni se entrega como operativo el modelo del experimento binario antigu
 - Esperar el entrenamiento y mostrar la nueva versión activa con diez observaciones del proveedor.
 - Ejecutar una corrida posterior y comprobar que la decide ML y que sus cambios se propagan.
 - Mostrar al operador únicamente el estado funcional y los avisos de cuarentena. Puntajes,
-  versiones y diagnóstico de aprendizaje se muestran desde las herramientas de backend.
+  versiones y diagnóstico de aprendizaje se muestran desde las herramientas de backend o
+  desde Monitoreo técnico, presentándolo como administración de plataforma.
+
+## Aclaración que debe decirse en el video: visualización de métricas
+
+Al mostrar Monitoreo técnico, mencionar explícitamente:
+
+> La visualización de métricas dentro de esta aplicación es una simplificación para el TP.
+> Corresponde al administrador del sistema, no a los usuarios de negocio. En un producto con
+> perfiles separados, los usuarios no deberían ver esta vista ni acceder a sus endpoints.
+> En la demostración todas las cuentas precreadas comparten un único perfil de permisos.
+
+Separar el recorrido de usuario del recorrido de administración. Al usuario se le muestran
+proveedores, tiendas, sincronizaciones y avisos de cuarentena; la infraestructura, la versión
+del modelo, su readiness y el aprendizaje pendiente se muestran en el tramo de administración.
+La presencia de Monitoreo en el menú de todas las cuentas del TP no significa que se haya
+implementado un rol administrador ni una separación real de permisos. El diseño y esta
+simplificación están en el [ADR-0017](../adr/0017-metricas-y-observador.md).
 
 Se pueden usar disparos manuales de `ivostock ingest ID` para preparar la demostración sin esperar
 diez intervalos de cinco horas. Deben identificarse como corridas manuales y declarar si se usan
