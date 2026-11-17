@@ -31,28 +31,68 @@ docker compose up --build -d --wait
 docker compose ps
 ```
 
+Las tiendas del marketplace simulado se crean aparte, con el inventario configurado en `data/feeds/celesa.csv` (ver [Datos y configuración](#datos-y-configuración)):
+
+```sh
+make provision    # o: docker compose run --rm cli python scripts/provisionar_tiendas.py
+```
+
+Es idempotente: sólo crea las tiendas que faltan, y siempre con la misma muestra. Para agregar una tienda, sumarla al final de `MARKETPLACE_STORES` en `.env` y repetir el comando.
+
 También se puede ejecutar `make up`. La configuración inicial genera secretos aleatorios en `.env`, agrega las claves que falten y no sobrescribe valores existentes. Los volúmenes conservan PostgreSQL y snapshots. `docker compose down` apaga sin borrarlos; para empezar de cero sin perder una corrida anterior, usar otro `COMPOSE_PROJECT_NAME`. Si el puerto 5432 ya está ocupado por un PostgreSQL local, definir `POSTGRES_HOST_PORT=5433` en `.env`.
 
 | Servicio | Función |
 |---|---|
 | `postgres`, `minio` | Estado, cola y cuota; snapshots inmutables |
-| `api` | [health](http://localhost:8000/health) y [OpenAPI](http://localhost:8000/openapi.json) |
+| `api` | [Interfaz de configuración](http://localhost:8000/) y [health](http://localhost:8000/health); el esquema OpenAPI exige sesión (`GET /openapi.json`) |
 | `simulator` | Marketplace simulado: [health](http://localhost:8001/health) y [OpenAPI](http://localhost:8001/openapi.json) |
 | `provider` | Proveedor de ensayo en `http://localhost:8081/ARCHIVO.csv` (`http://provider:8081` dentro de Docker) |
 | `ingest`, `compare`, `publish`, `catalog` | Workers independientes: ingesta, comparación, publicación e importación de catálogo |
 | `user`, `cli` | Perfil `tools`: sesión de usuario y CLI de backend, con `docker compose run --rm` |
 
-El POC no tiene interfaz gráfica; configuración y estado se operan desde una terminal local. La interfaz autenticada es un hito del MVP.
+La interfaz de configuración (RF-25) se sirve desde la propia API en <http://localhost:8000/>: se ingresa con una cuenta de `data/operadores.txt` (ver [Cuentas de operador](#cuentas-de-operador)) y permite dar de alta y baja proveedores, incorporar tiendas, aprobar vínculos, apagarlos o reanudarlos y seguir las corridas de ingesta. Es HTML y JavaScript estáticos, sin build ([ADR-0013](docs/adr/0013-interfaz-estatica.md)). La CLI y la sesión `usuario>` siguen disponibles para ensayo y operación.
+
+## Cuentas de operador
+
+`python scripts/configurar.py` precrea cinco operadores (`operador1` a `operador5`): los hashes quedan en `OPERATOR_ACCOUNTS` de `.env` y las contraseñas, en `data/operadores.txt`, ambos fuera de Git. El servicio `init` los copia a PostgreSQL en cada arranque. Si las cuentas ya existen no se regeneran; para rotarlas se borra `OPERATOR_ACCOUNTS` de `.env`, se ejecuta de nuevo el script y se reinicia con `docker compose up -d --wait`, lo que cierra las sesiones de las cuentas cambiadas. Decisión y alternativas en el [ADR-0010](docs/adr/0010-cuentas-y-sesiones.md).
+
+```sh
+curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"username": "operador1", "password": "CONTRASEÑA_DE_data/operadores.txt"}'
+curl -s http://localhost:8000/auth/me -H 'Authorization: Bearer TOKEN'
+curl -s -X POST http://localhost:8000/auth/logout -H 'Authorization: Bearer TOKEN'
+```
+
+Sólo `GET /health` y `POST /auth/login` funcionan sin sesión entre los endpoints de la API; además, `/` y `/static/*` sirven la interfaz sin sesión porque contienen sólo la página de acceso y su código. La sesión dura `SESSION_TTL_MINUTES` (480 por defecto). Swagger UI y ReDoc están apagados y el esquema OpenAPI sólo se entrega con sesión ([ADR-0014](docs/adr/0014-contrato-privado-y-limite-de-intentos.md)). Tras `LOGIN_MAX_ATTEMPTS` (5) contraseñas erróneas de un mismo usuario en `LOGIN_WINDOW_MINUTES` (15) el login responde `429` con `Retry-After`; un acceso correcto o el paso de la ventana lo levantan.
+
+## API de configuración
+
+Es la base de la interfaz: los mismos servicios que la CLI, expuestos con sesión de operador. La referencia completa es el esquema OpenAPI, que se obtiene con sesión: `curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/openapi.json`. Incluye la lectura de corridas (`GET /runs`, `GET /runs/summary`). No incluye comandos de ensayo ni de operación interna (`fault`, `schedule-now`, `monitor`, `compare`, `publish`).
+
+| Método y ruta | Acción |
+|---|---|
+| `POST /providers` | Alta: descarga la fuente y devuelve SKU, tasa y alerta de errores de parseo, muestra, próxima ingesta y sugerencias por tienda |
+| `GET /providers` | Lista (sin la URL) |
+| `POST /providers/{id}/disable` | Baja: lleva a cero sus vínculos antes de desactivar (202) |
+| `GET /stores/available` | Tiendas con credenciales preconfiguradas (`MARKETPLACE_STORES`) y si ya fueron incorporadas |
+| `POST /stores` | Incorpora una tienda disponible que existe en el marketplace e importa su catálogo en segundo plano; nunca la crea |
+| `GET /stores` | Tiendas con `processed`, `total` y `progress_percent` de la importación |
+| `GET /providers/{id}/suggestions?store=T1&sku=&limit=&positive_only=` | Publicaciones sugeridas desde el último inventario aceptado, sin descargar nada |
+| `POST /providers/{id}/approve` | Aprueba `{"store": "T1", "all": true}`, `{"items": [...]}` o `{"count": N}`; con `positive_only` opcional |
+| `GET /links`, `GET /links/summary` | Vínculos paginados (`limit` hasta 100 y `next_offset`) y contadores, con filtro `store` |
+| `POST /links/{id}/off`, `POST /links/{id}/resume` | Apagar (202) y reanudar un vínculo fallido |
+
+Los errores son `{"detail": "..."}`: 404 si no existe, 409 si choca con el estado actual (nombre repetido, publicación ya asignada, catálogo aún importándose, ya dado de baja), 422 si la entrada o la fuente son inválidas, 502 si falla la fuente o el marketplace y 500 sin detalle ante un fallo interno. Para incorporar una segunda tienda con el inventario ya ingerido basta `POST /stores`, esperar `catalog_imported` y aprobar contra el mismo proveedor: no se descarga la fuente otra vez y una sola corrida posterior actualiza ambas tiendas. Una tienda fuera de `GET /stores/available` o inexistente en el marketplace responde 404 con un mensaje distinto en cada caso. Decisiones en el [ADR-0011](docs/adr/0011-api-de-configuracion.md).
 
 ## Simplificaciones del POC
 
 - **Marketplace simulado.** Las tiendas son un servicio HTTP propio con cuota de 60 llamadas/minuto y errores provocables. No hay OAuth: las credenciales están preconfiguradas por entorno. Un funcionamiento correcto contra el simulador no acredita la integración productiva.
 - **Catálogo sintético.** Las publicaciones se generan con SKU tomados del feed real; sus atributos no son reales y permanecen estáticos.
 - **Fuente real archivada.** Celesa se reproduce desde un snapshot archivado y servido localmente por HTTP, no desde el endpoint vivo. Las variantes de cambios y fallas son sintéticas y se identifican como tales.
-- **Login de demostración.** La sesión `usuario>` imita al futuro frontend y valida localmente la cuenta `Admin`/`Admin` contra un hash PBKDF2 en `.env`. No hay API de login (`POST /auth/login`), cuentas individuales ni interfaz gráfica: corresponden al MVP (RF-01, RF-25). La API sólo expone `GET /health`.
-- **Tienda generada al darla de alta.** `store-add` le pide al simulador una tienda con el 50 % de los SKU distintos del inventario configurado (`CATALOG_FEED`), todas con stock cero. En producción la tienda ya existiría.
+- **Interfaz sin intentos ni cartas muertas.** La interfaz cubre proveedores, tiendas, vinculación, vínculos y el tablero de corridas sobre la [API de configuración](#api-de-configuración) (RF-25, ver [ADR-0013](docs/adr/0013-interfaz-estatica.md)); no muestra los intentos de publicación ni las dead letters, que se consultan con `status deadletters` en la CLI. La sesión `usuario>` sigue usando las mismas cuentas de operador que la API (RF-01, ver [Cuentas de operador](#cuentas-de-operador)).
+- **Tiendas aprovisionadas aparte.** `scripts/provisionar_tiendas.py` crea en el simulador las tiendas de `MARKETPLACE_STORES` (T1 y T2) con el 50 % de los SKU distintos del inventario configurado (`CATALOG_FEED`), con la mitad de esa muestra común a todas y el resto propio de cada una, y todas con stock cero. En producción las tiendas ya existirían: la aplicación (API, `store-add` y la sesión de usuario) sólo incorpora las que ya existen y nunca usa la credencial de control.
 - **Proveedor con variantes.** El servicio `provider` reproduce el archivo archivado y, en cada consulta, permuta las cantidades positivas del 40 % de los SKU. `?no-changes=true` devuelve el archivo intacto.
-- **Una tienda y un proveedor.** La segunda tienda y las mediciones de escala, consulta y disponibilidad son del MVP.
+- **Un proveedor.** Las mediciones de escala, consulta y disponibilidad son del MVP.
 - **Sin ML.** El componente se define e implementa para la Entrega 3.
 
 ## Datos y configuración
@@ -90,14 +130,18 @@ También permite `--ceros`, `--corruptas` y `--deriva`, como fracciones entre ce
 Dos terminales con el mismo `COMPOSE_PROJECT_NAME`: una de usuario y otra de backend. La sesión de usuario se abre con `docker compose run --rm user`; los comandos siguientes se escriben en `usuario>`:
 
 ```text
-login                                            # Admin / Admin
-store-add T1                                     # importa el catálogo en segundo plano
+login                                            # operador1 y su contraseña de data/operadores.txt
+store-add T1                                     # tienda ya aprovisionada; importa su catálogo en segundo plano
 status stores
 provider-add Celesa http://provider:8081/celesa.csv
 suggest 1 T1 --limit 10 --positive-only
 approve 1 T1 --count 3600 --positive-only
 status links --store T1 --summary
 status links --store T1 --limit 2
+store-add T2                                     # segunda tienda: reutiliza el inventario ya ingerido
+status stores                                    # el worker alterna el catálogo de T1 y T2
+suggest 1 T2 --limit 10 --positive-only          # sin descargar al proveedor otra vez
+approve 1 T2 --count 3600 --positive-only
 ```
 
 En la terminal de backend:
@@ -112,7 +156,7 @@ docker compose run --rm cli ivostock schedule-now 1
 docker compose logs --no-color --timestamps publish | grep -E '"link": (1|2),'
 ```
 
-`monitor` muestra llamadas de los últimos sesenta segundos según el cliente y según el simulador, progreso del catálogo, contadores de vínculos (`awaiting_ingest`, `pending`, `failed`, `synchronized`, `changed_from_initial`) e intentos por estado. Importar 127.564 publicaciones lleva unos 22 minutos y publicar 3.600 cantidades, alrededor de una hora: la cuota es la real. El alta del proveedor es una validación; la primera ingesta vence 300 minutos después y `schedule-now` la adelanta por el circuito normal.
+`monitor` muestra llamadas de los últimos sesenta segundos según el cliente y según el simulador, progreso del catálogo, contadores de vínculos (`awaiting_ingest`, `pending`, `failed`, `synchronized`, `changed_from_initial`) e intentos por estado. Importar 127.564 publicaciones lleva unos 22 minutos por tienda (con dos tiendas en importación el worker las alterna y cada una avanza al ritmo de su propia cuota) y publicar 3.600 cantidades, alrededor de una hora: la cuota es la real. El alta del proveedor es una validación; la primera ingesta vence 300 minutos después y `schedule-now` la adelanta por el circuito normal.
 
 ## Recorrido manual paso a paso
 

@@ -24,7 +24,7 @@ flowchart LR
 
 Python 3.12, FastAPI, SQLAlchemy, Alembic, psycopg, httpx y boto3. Las dependencias se bloquean en `uv.lock`. API y workers comparten PostgreSQL; no se llaman entre sí. Sus caídas son independientes mientras PostgreSQL esté disponible. El simulador persiste en tablas propias y el motor sólo lo consulta por HTTP.
 
-La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostock.services`. La sesión imita las acciones del futuro frontend: exige el login de demostración y sólo expone comandos de usuario; los comandos de ensayo y operación (`fault`, `schedule-now`, `monitor`, `compare`, `publish`) quedan en la CLI de backend. La ingesta reside en `ivostock.ingesta.servicio`, el parser y la guarda en `ivostock.ingesta`, la comparación en `ivostock.comparison`, el publicador en `ivostock.publisher` y el catálogo HTTP en `ivostock.marketplace`. El POC no expone operaciones de configuración por la API; su endpoint es `GET /health`. La interfaz autenticada corresponde al MVP.
+La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostock.services`. La sesión imita las acciones del frontend: exige el login con una cuenta de operador (`ivostock.auth`, la misma que usa la API) y sólo expone comandos de usuario; los comandos de ensayo y operación (`fault`, `schedule-now`, `monitor`, `compare`, `publish`) quedan en la CLI de backend. La ingesta reside en `ivostock.ingesta.servicio`, el parser y la guarda en `ivostock.ingesta`, la comparación en `ivostock.comparison`, el publicador en `ivostock.publisher` y el catálogo HTTP en `ivostock.marketplace`. La API expone `GET /health` y la autenticación (`POST /auth/login`, `POST /auth/logout`, `GET /auth/me`); todo otro endpoint declara la dependencia `require_operator` (RNF-11). La configuración (`/providers`, `/stores`, `/links`) delega en `ivostock.services` y traduce los errores tipados de `ivostock.errors` a 404, 409, 422 y 502 sin exponer detalles internos ([ADR-0011](../adr/0011-api-de-configuracion.md)); la interfaz estática de configuración se sirve en `/` y `/static/*`, rutas públicas y fuera de OpenAPI que no entregan datos operativos ([ADR-0013](../adr/0013-interfaz-estatica.md)).
 
 ## Persistencia y transacciones
 
@@ -32,6 +32,7 @@ La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostoc
 |---|---|
 | providers, provider_preview | Configuración, próxima ingesta y SKU de la validación del alta |
 | stores, catalog | Estado, punto de control de importación (`import_offset`, `import_total`, `import_finished_at`) y catálogo importado |
+| users, sessions | Operadores precreados (hash PBKDF2) y sesiones con el SHA-256 del token y su vencimiento ([ADR-0010](../adr/0010-cuentas-y-sesiones.md)) |
 | runs, stock | Snapshot, resultado y último inventario completo aceptado |
 | links | Asignación, confirmado inicial, deseado, confirmado, revisión, corte y estado |
 | comparison_events | Aviso durable creado en el commit de aceptación |
@@ -51,7 +52,7 @@ La programación persiste `next_run_at`. El alta lo fija 300 minutos después de
 
 La validación del alta descarga la fuente, aplica RF-11 y guarda sus SKU en `provider_preview`. No es una corrida: no crea snapshot, inventario vigente ni evento de comparación. Las sugerencias usan la última corrida aceptada o, mientras no exista, esa vista previa. Un vínculo aprobado antes de la primera corrida se crea con deseado igual al confirmado del catálogo, así que no genera tareas; la primera corrida aceptada emite el evento que lo compara.
 
-La importación de catálogo corre en el worker `catalog`, una página de hasta cien publicaciones por ciclo. Las publicaciones de la página y el nuevo `import_offset` se confirman en la misma transacción; si el proceso cae antes, la página se vuelve a pedir y `ON CONFLICT DO NOTHING` evita duplicados. Un 429 respeta `Retry-After`; 5xx o una caída de PostgreSQL se reintentan; 401 o 403 degradan la tienda y la reintentan a los treinta segundos. `store-add --wait` ejecuta la misma importación en el proceso de la CLI. El lock evita solapamientos. Una corrida automática interrumpida se recupera mediante el tratamiento de corridas abandonadas antes de esperar el siguiente vencimiento.
+La importación de catálogo corre en el worker `catalog`, una página de hasta cien publicaciones por ciclo. Las publicaciones de la página y el nuevo `import_offset` se confirman en la misma transacción; si el proceso cae antes, la página se vuelve a pedir y `ON CONFLICT DO NOTHING` evita duplicados. Un 429 respeta `Retry-After`; 5xx o una caída de PostgreSQL se reintentan; 401 o 403 degradan la tienda y la reintentan a los treinta segundos. `store-add --wait` ejecuta la misma importación en el proceso de la CLI. Con varias tiendas pendientes se atienden por rotación (primero la menos recientemente atendida, `stores.import_served_at`) y una tienda sin cupo libre en su ventana cede el turno a las demás, de modo que una importación larga no demora a una tienda nueva ([ADR-0012](../adr/0012-tiendas-aprovisionadas-y-rotacion.md)). Un 404 durante la importación degrada la tienda con el mensaje «La tienda no existe en el marketplace». El lock evita solapamientos. Una corrida automática interrumpida se recupera mediante el tratamiento de corridas abandonadas antes de esperar el siguiente vencimiento.
 
 El comparador toma el mismo lock por proveedor. Lee su inventario vigente y los vínculos, actualiza deseados y encola diferencias, marcando eventos procesados en la misma transacción. Los vínculos en falla actualizan su deseado pero no vuelven a encolarse solos. Los cortes conservan deseado cero aunque una ingesta posterior tenga cantidad positiva.
 
@@ -81,13 +82,25 @@ La CLI reanuda con el inventario actual, respetando un corte. Marca la revisión
 
 ## Contratos HTTP y operación
 
+La API de la aplicación (`ivostock.main`, puerto 8000) expone la configuración sobre `ivostock.services`, sin duplicar lógica de la CLI. Sólo `GET /health` y `POST /auth/login` aceptan peticiones sin sesión; la interfaz estática (`/`, `/static/*`) es pública porque no sirve datos ([ADR-0013](../adr/0013-interfaz-estatica.md)). Todo lo demás exige `Authorization: Bearer` de un operador ([ADR-0010](../adr/0010-cuentas-y-sesiones.md)), incluido el esquema `GET /openapi.json`; Swagger UI y ReDoc están apagados y el login se bloquea tras varios fallos ([ADR-0014](../adr/0014-contrato-privado-y-limite-de-intentos.md)). Los errores son `{"detail": ...}`: 404, 409, 422 y 502 con mensaje propio, 429 en el login y 500 sin detalle ([ADR-0011](../adr/0011-api-de-configuracion.md)). No se exponen `fault`, `schedule-now`, `monitor`, `compare` ni `publish`.
+
+| Endpoint de la aplicación | Contrato |
+|---|---|
+| `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Sesión de operador; el token se guarda como SHA-256 y vence a los `SESSION_TTL_MINUTES` |
+| `POST /providers`, `GET /providers`, `POST /providers/{id}/disable` | Alta con validación de la fuente (SKU, tasa de errores, muestra, próxima ingesta); listado sin URL; baja que lleva a cero los vínculos |
+| `GET /providers/{id}/suggestions`, `POST /providers/{id}/approve` | Sugerencias por SKU con el último inventario aceptado, sin descargar; aprobación de todas, una selección o las primeras N; una publicación con vínculo activo se rechaza (RF-07) |
+| `GET /stores`, `GET /stores/available`, `POST /stores` | Tiendas con progreso de importación; las preconfiguradas en `MARKETPLACE_STORES`; incorporar una tienda que ya existe en el marketplace |
+| `GET /links`, `GET /links/summary`, `POST /links/{id}/off`, `POST /links/{id}/resume` | Vínculos paginados y contadores; apagado con cero confirmado antes de desactivar; reanudación de un vínculo fallido |
+| `GET /runs`, `GET /runs/summary` | Corridas de ingesta, de sólo lectura, y su conteo por estado |
+| `GET /health` | Disponibilidad de proceso y esquema, sin datos de negocio |
+
 El contrato del proveedor es RF-11. La preparación agrega exactamente los bytes `SKU;stock\n` al original, conserva procedencia y hashes y sirve únicamente el directorio de derivados. Las credenciales se configuran por entorno; las URLs no deben incluir secretos.
 
 | Endpoint del simulador | Contrato |
 |---|---|
 | `GET /stores/{store}/items` | Bearer preconfigurado; `limit` entero de 1 a 100 (por defecto 100) y `offset` entero desde 0 (por defecto 0). Ordena por ID de publicación; devuelve `items`, `next_offset` (`null` al terminar) y `total` |
 | `PUT /stores/{store}/items/{item}/stock` | Bearer; JSON `available_quantity` entero no negativo; cantidad absoluta |
-| `POST /admin/seed` | Credencial de control; crea catálogo una vez por tienda. `store-add` lo usa con una muestra del 50 % de los SKU distintos del inventario configurado, con stock cero |
+| `POST /admin/seed` | Credencial de control; crea catálogo una vez por tienda. Lo usan `scripts/provisionar_tiendas.py` (muestras del 50 % de los SKU distintos del inventario, con un núcleo común a todas las tiendas, y stock cero) y `seed`; la aplicación no |
 | `POST /admin/fault` | Credencial de control; estado HTTP e intentos afectados, por tienda o publicación |
 | `GET /admin/stores/{store}` | Observación externa de ensayos, sin consumir cuota de negocio |
 | `GET /admin/stores/{store}/summary` | Existencia, publicaciones y llamadas de negocio de los últimos sesenta segundos, sin consumir cuota |
@@ -95,7 +108,7 @@ El contrato del proveedor es RF-11. La preparación agrega exactamente los bytes
 
 El proveedor de ensayo (`ivostock.proveedor`, puerto 8081) sirve los archivos de `data/feeds`. En cada `GET /{archivo}.csv` elige el 40 % de las filas y permuta entre ellas sus cantidades positivas; los ceros, el orden y el archivo base no cambian. `?no-changes=true` devuelve los bytes archivados. Como no hay SKU ausentes ni ceros nuevos, las variantes no activan la guarda.
 
-El cero se observa como `out_of_stock`; una cantidad positiva como `active`. Los controles administrativos nunca son usados por el publicador. Las lecturas por la API de negocio sí consumen cuota. OpenAPI se obtiene de `/openapi.json` de cada aplicación.
+El cero se observa como `out_of_stock`; una cantidad positiva como `active`. Los controles administrativos nunca son usados por el publicador. Las lecturas por la API de negocio sí consumen cuota. OpenAPI del simulador se obtiene de su `/openapi.json`; el de la API de la aplicación sólo se entrega con sesión de operador (ADR-0014).
 
 La CLI devuelve JSON y códigos de salida no nulos para errores. `monitor` reúne por tienda las llamadas de los últimos sesenta segundos según el cliente (`market_calls`) y según el simulador, el progreso del catálogo, los contadores de vínculos y los intentos por estado y código HTTP; con `--watch` repite la consulta y sobrevive a una caída de PostgreSQL. Los registros no imprimen URL, tokens ni excepciones HTTP con credenciales. Cada corrida puede seguirse mediante su proveedor, evento, vínculo, revisión e intento.
 

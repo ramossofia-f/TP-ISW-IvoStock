@@ -1,11 +1,10 @@
 import random
 from collections import Counter
 
-import pytest
 from fastapi.testclient import TestClient
 
-from ivostock import cli, proveedor
-from ivostock.usuario import Session, password_hash, verify
+from ivostock import auth, proveedor
+from ivostock.usuario import Session
 
 FEED = "SKU;stock\n" + "".join(f"A{n:03};{n % 7}\n" for n in range(200))
 
@@ -37,39 +36,27 @@ def test_provider_service_serves_variants_and_archived_bytes(tmp_path, monkeypat
     assert (tmp_path / "celesa.csv").read_text(encoding="utf-8") == FEED
 
 
-def test_store_sample_is_half_of_distinct_skus_with_zero_stock(tmp_path):
-    feed = tmp_path / "feed.csv"
-    feed.write_text(FEED + "A000;9\n", encoding="utf-8")
-    items = cli.sample_catalog("T1", feed, 0.5)
-    assert len(items) == 100
-    assert [i["id"] for i in items[:2]] == ["ITEM000001", "ITEM000002"]
-    assert {i["available_quantity"] for i in items} == {0}
-    assert len({i["sku"] for i in items}) == 100
-    assert items == cli.sample_catalog("T1", feed, 0.5)
-    with pytest.raises(ValueError):
-        cli.sample_catalog("T1", tmp_path / "falta.csv", 0.5)
-
-
-def demo_env():
-    return {"DEMO_USERNAME": "Admin", "DEMO_PASSWORD_HASH": password_hash("Admin", "00" * 16)}
-
-
-def test_demo_login_checks_user_and_password_hash():
-    env = demo_env()
-    assert verify("Admin", "Admin", env)
-    assert not verify("Admin", "admin", env)
-    assert not verify("admin", "Admin", env)
-    assert not verify("Admin", "Admin", {})
-
-
 def test_user_session_requires_login_and_hides_backend_commands(monkeypatch):
-    for key, value in demo_env().items():
-        monkeypatch.setenv(key, value)
-    answers = iter(["Admin"])
-    session = Session(ask=lambda _: next(answers), ask_secret=lambda _: "Admin")
+    accounts = {("operador1", "clave-correcta")}
+    monkeypatch.setattr(
+        auth,
+        "authenticate",
+        lambda engine, user, password: (
+            {"id": 1, "username": user} if (user, password) in accounts else None
+        ),
+    )
+    answers = iter(["operador1", "operador1"])
+    passwords = iter(["clave-incorrecta", "clave-correcta"])
+    session = Session(
+        ask=lambda _: next(answers), ask_secret=lambda _: next(passwords), engine=object()
+    )
     assert session.handle("status stores") == {"error": "Iniciar sesión con login"}
-    assert session.handle("login") == {"status": "authenticated", "demo_login": True}
+    assert session.handle("login")["status"] == "rejected"
+    assert session.handle("status stores") == {"error": "Iniciar sesión con login"}
+    assert session.handle("login") == {"status": "authenticated", "user": "operador1"}
     assert "desconocido" in session.handle("fault T1 503")["error"]
     assert "desconocido" in session.handle("schedule-now 1")["error"]
     assert session.handle("approve 1") == {"error": "Argumentos inválidos; ver help"}
+    assert session.handle("logout") == {"status": "logged_out"}
+    assert session.handle("status stores") == {"error": "Iniciar sesión con login"}
     assert session.handle("exit") is None

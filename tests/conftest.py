@@ -15,7 +15,8 @@ from sqlalchemy.engine import make_url
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):
-        pass
+        # Sin salida; cada petición atendida queda registrada para contar descargas.
+        self.server.hits.append(self.path)
 
 
 @pytest.fixture(scope="session")
@@ -32,6 +33,7 @@ def infrastructure():
     os.environ["DATABASE_URL"] = test_url.render_as_string(hide_password=False)
     os.environ["S3_BUCKET"] = "snapshots-test"
     os.environ["TASK_LEASE_SECONDS"] = "1"
+    os.environ["MARKETPLACE_STORES"] = "T1,T2,T3"
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
     from ivostock.storage import Snapshots
 
@@ -82,7 +84,7 @@ def engine(infrastructure):
     with db.begin() as conn:
         execute(
             conn,
-            "TRUNCATE provider_preview,providers,stores,runs,stock,catalog,links,comparison_events,tasks,attempts,dead_letters,market_calls,worker_heartbeats,sim_stores,sim_items,sim_calls,sim_faults RESTART IDENTITY CASCADE",
+            "TRUNCATE provider_preview,providers,stores,runs,stock,catalog,links,comparison_events,tasks,attempts,dead_letters,market_calls,worker_heartbeats,sim_stores,sim_items,sim_calls,sim_faults,sessions,users,login_failures RESTART IDENTITY CASCADE",
         )
     return db
 
@@ -91,6 +93,7 @@ def engine(infrastructure):
 def feed_server(tmp_path):
     handler = functools.partial(QuietHandler, directory=str(tmp_path))
     server = http.server.ThreadingHTTPServer(("0.0.0.0", 0), handler)
+    server.hits = []
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     path = tmp_path / "feed.csv"
@@ -107,7 +110,32 @@ def feed_server(tmp_path):
         "write": write,
         "stock": stock,
         "path": path,
+        "hits": server.hits,
     }
     server.shutdown()
     server.server_close()
     thread.join(timeout=3)
+
+
+@pytest.fixture
+def api(engine, operators):
+    """Cliente HTTP autenticado como el operador `ana`."""
+    from fastapi.testclient import TestClient
+
+    from ivostock.main import app
+
+    client = TestClient(app)
+    login = client.post("/auth/login", json={"username": "ana", "password": "clave-ana"})
+    client.headers["Authorization"] = "Bearer " + login.json()["token"]
+    return client
+
+
+@pytest.fixture
+def operators(engine):
+    """Dos operadores precreados: `ana` (clave-ana) y `beto` (clave-beto)."""
+    from ivostock import auth
+
+    hashes = {name: auth.password_hash(f"clave-{name}", "11" * 16) for name in ("ana", "beto")}
+    value = ",".join(f"{name}={stored}" for name, stored in hashes.items())
+    assert auth.sync_operators(engine, value)["created"] == 2
+    return value

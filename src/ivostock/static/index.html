@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ivo Stock · Configuración</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/app.js" defer></script>
+</head>
+<body>
+    <div id="loading-overlay" class="hidden" role="status" aria-live="polite">
+        <div class="spinner"></div>
+        <p>Procesando...</p>
+    </div>
+
+    <div id="toast" class="hidden" role="status" aria-live="polite"></div>
+
+    <nav id="main-nav" class="hidden" aria-label="Secciones">
+        <ul>
+            <li><button type="button" class="nav-link" data-view="proveedores">Proveedores</button></li>
+            <li><button type="button" class="nav-link" data-view="tiendas">Tiendas</button></li>
+            <li><button type="button" class="nav-link" data-view="vinculacion">Vinculación</button></li>
+            <li><button type="button" class="nav-link" data-view="vinculos">Mis vínculos</button></li>
+            <li><button type="button" class="nav-link" data-view="corridas">Corridas</button></li>
+            <li class="spacer"><span id="who"></span></li>
+            <li><button type="button" class="nav-link" id="btn-logout">Cerrar sesión</button></li>
+        </ul>
+    </nav>
+
+    <main id="app-content">
+        <section id="view-login" class="view">
+            <h2>Acceso a Configuración</h2>
+            <form id="form-login">
+                <label for="username">Usuario</label>
+                <input type="text" id="username" autocomplete="username" maxlength="64" required>
+                <label for="password">Contraseña</label>
+                <input type="password" id="password" autocomplete="current-password" required>
+                <button type="submit">Ingresar</button>
+                <p id="login-error" class="notice error hidden" role="alert"></p>
+            </form>
+        </section>
+
+        <section id="view-proveedores" class="view hidden">
+            <h2>Proveedores</h2>
+            <form id="form-proveedor">
+                <label for="prov-nombre">Nombre</label>
+                <input type="text" id="prov-nombre" maxlength="100" required>
+                <label for="prov-url">URL del inventario (http o https, formato SKU;stock)</label>
+                <input type="url" id="prov-url" maxlength="2048" required>
+                <button type="submit">Dar de alta</button>
+                <p id="prov-validation" class="notice hidden" role="alert"></p>
+            </form>
+
+            <div id="prov-result" class="result hidden"></div>
+
+            <div class="table-wrap">
+                <table id="table-proveedores">
+                    <thead>
+                        <tr>
+                            <th>ID</th><th>Nombre</th><th>Estado</th><th>Próxima ingesta</th>
+                            <th>Última corrida aceptada</th><th>Último error</th><th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="view-tiendas" class="view hidden">
+            <h2>Tiendas</h2>
+            <div class="actions">
+                <label for="select-tienda-incorporar" class="visually-hidden">Tienda a incorporar</label>
+                <select id="select-tienda-incorporar"></select>
+                <button type="button" id="btn-incorporar">Incorporar tienda</button>
+            </div>
+            <div id="tiendas-list"></div>
+        </section>
+
+        <section id="view-vinculacion" class="view hidden">
+            <h2>Vinculación de catálogo</h2>
+            <div class="filters">
+                <label for="vinc-proveedor" class="visually-hidden">Proveedor</label>
+                <select id="vinc-proveedor"></select>
+                <label for="vinc-tienda" class="visually-hidden">Tienda</label>
+                <select id="vinc-tienda"></select>
+                <label for="vinc-sku" class="visually-hidden">SKU</label>
+                <input type="text" id="vinc-sku" placeholder="Buscar por SKU exacto" maxlength="128">
+                <label class="inline"><input type="checkbox" id="vinc-positivo"> Sólo con stock mayor que cero</label>
+                <button type="button" id="btn-buscar-sku">Buscar sugerencias</button>
+            </div>
+
+            <div id="vinc-results" class="hidden">
+                <p id="vinc-resumen"></p>
+                <div class="bulk-actions">
+                    <button type="button" id="btn-aprobar-seleccion">Aprobar selección</button>
+                    <span class="inline">
+                        <label for="input-cantidad" class="visually-hidden">Cantidad</label>
+                        <input type="number" id="input-cantidad" min="1" max="1000000" value="10">
+                        <button type="button" id="btn-aprobar-cantidad">Aprobar primeras N</button>
+                    </span>
+                    <button type="button" id="btn-aprobar-todo">Aprobar todas</button>
+                </div>
+                <p id="vinc-hint" class="muted hidden">
+                    Con una búsqueda por SKU sólo se puede aprobar la selección: «todas» y «primeras N»
+                    se aplican a todas las sugerencias, no al filtro.
+                </p>
+                <div id="vinc-rechazos" class="notice error hidden" role="alert">
+                    <h4>Rechazo de validación</h4>
+                    <p id="vinc-rechazo-texto"></p>
+                </div>
+                <div class="table-wrap">
+                    <table id="table-vinculacion">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="check-all" aria-label="Seleccionar todas"></th>
+                                <th>SKU</th><th>Publicación</th><th>Cantidad del proveedor</th>
+                                <th>Cantidad en la tienda</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="view-vinculos" class="view hidden">
+            <h2>Mis vínculos</h2>
+            <div class="filters">
+                <label for="vinculos-tienda" class="visually-hidden">Filtrar por tienda</label>
+                <select id="vinculos-tienda"></select>
+            </div>
+            <div id="vinculos-resumen" class="stats"></div>
+            <div class="table-wrap">
+                <table id="table-vinculos">
+                    <thead>
+                        <tr>
+                            <th>ID</th><th>Proveedor</th><th>Tienda</th><th>Publicación</th><th>SKU</th>
+                            <th>Estado</th><th>Deseado</th><th>Confirmado</th><th>Último error</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <button type="button" id="btn-prev-page" disabled>Anterior</button>
+                <span id="current-page">1</span>
+                <button type="button" id="btn-next-page" disabled>Siguiente</button>
+            </div>
+        </section>
+
+        <section id="view-corridas" class="view hidden">
+            <h2>Corridas de ingesta</h2>
+            <p class="muted">Cada corrida descarga el inventario de un proveedor y decide si se acepta. Se actualiza sola cada 5 segundos.</p>
+            <div class="filters">
+                <label for="corridas-proveedor" class="visually-hidden">Filtrar por proveedor</label>
+                <select id="corridas-proveedor"></select>
+            </div>
+            <div id="corridas-resumen" class="stats"></div>
+            <div class="table-wrap">
+                <table id="table-corridas">
+                    <thead>
+                        <tr>
+                            <th>Corrida</th><th>Proveedor</th><th>Estado</th><th>Inicio</th><th>Fin</th>
+                            <th>SKU</th><th>Filas descartadas</th><th>Errores de parseo</th>
+                            <th>Sospecha</th><th>Detalle</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <button type="button" id="btn-prev-runs" disabled>Anterior</button>
+                <span id="current-runs-page">1</span>
+                <button type="button" id="btn-next-runs" disabled>Siguiente</button>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

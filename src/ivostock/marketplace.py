@@ -6,8 +6,9 @@ import httpx
 
 from ivostock.config import Settings
 from ivostock.db import execute, execute_many, ownership, rows
+from ivostock.errors import UpstreamError
 from ivostock.failpoints import checkpoint
-from ivostock.quota import reserve
+from ivostock.quota import has_capacity, reserve
 
 
 def market_request(engine, store, method, path, **kwargs):
@@ -23,6 +24,24 @@ def market_request(engine, store, method, path, **kwargs):
         )
 
 
+def store_exists(engine, store):
+    """Sondea la tienda con una lectura mínima por la API de negocio (consume una llamada de cuota).
+
+    Evita registrar una tienda que el marketplace no conoce: su importación fallaría para siempre.
+    """
+    try:
+        response = market_request(
+            engine, store, "GET", f"/stores/{store}/items", params={"limit": 1}
+        )
+    except httpx.HTTPError:
+        raise UpstreamError("No se pudo consultar el marketplace") from None
+    if response.status_code == 200:
+        return True
+    if response.status_code == 404:
+        return False
+    raise UpstreamError(f"El marketplace respondió HTTP {response.status_code}")
+
+
 def register_store(engine, store):
     """Registra la tienda y deja su importación pendiente para el worker de catálogo."""
     with engine.begin() as conn:
@@ -31,14 +50,20 @@ def register_store(engine, store):
 
 
 def import_page(engine, store=None):
-    """Importa una página; el avance se confirma junto con sus publicaciones."""
+    """Importa una página; el avance se confirma junto con sus publicaciones.
+
+    Las tiendas se atienden por rotación: primero la menos recientemente atendida, de modo que
+    una importación larga no demore a la tienda recién incorporada. Una tienda sin cupo libre
+    cede el turno a las demás; si ninguna tiene, se atiende en el mismo orden y se espera.
+    """
     with engine.begin() as conn:
         pending = rows(
             conn,
-            "SELECT id FROM stores WHERE import_finished_at IS NULL AND blocked_until<=now() AND (CAST(:s AS text) IS NULL OR id=:s) ORDER BY id",
+            "SELECT id FROM stores WHERE import_finished_at IS NULL AND blocked_until<=now() AND (CAST(:s AS text) IS NULL OR id=:s) ORDER BY import_served_at NULLS FIRST, id",
             s=store,
         )
-    for candidate in pending:
+    ready = [c for c in pending if has_capacity(engine, c["id"])]
+    for candidate in ready + [c for c in pending if c not in ready]:
         with ownership(engine, f"store:{candidate['id']}") as owner:
             if owner is not None:
                 return _import_page(engine, owner, candidate["id"])
@@ -52,6 +77,10 @@ def _import_page(engine, owner, store):
             "SELECT import_offset FROM stores WHERE id=:s AND import_finished_at IS NULL",
             s=store,
         )
+        if current:
+            execute(
+                owner, "UPDATE stores SET import_served_at=clock_timestamp() WHERE id=:s", s=store
+            )
     if not current:
         return False
     offset = current[0]["import_offset"]
@@ -100,13 +129,20 @@ def _import_page(engine, owner, store):
     elif code >= 500:
         delay, status, error = 5, None, f"HTTP {code} al importar"
     else:
+        # Un 404 es esperable (la tienda dejó de existir): se informa con claridad y se
+        # reintenta tras la espera, sin ruido de excepción. Otros 4xx indican un defecto.
+        missing = code == 404
         with owner.begin():
             execute(
                 owner,
                 "UPDATE stores SET status='degraded',last_error=:e,blocked_until=now()+interval '5 minutes' WHERE id=:s",
                 s=store,
-                e=f"HTTP {code} al importar",
+                e="La tienda no existe en el marketplace"
+                if missing
+                else f"HTTP {code} al importar",
             )
+        if missing:
+            return True
         raise ValueError(f"Importación fallida: HTTP {code}")
     with owner.begin():
         execute(

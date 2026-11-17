@@ -109,7 +109,7 @@ def ingest(engine, provider_id, replay_of=None, scheduled=False):
                     "sku": len(feed.stock),
                     "discarded": feed.discarded,
                     "parse_error_rate": feed.error_rate,
-                    "parse_alert": feed.error_rate > 0.10,
+                    "parse_alert": feed.alert,
                     "sha256": hashlib.sha256(raw).hexdigest(),
                     "reused_inventory": same_snapshot,
                 }

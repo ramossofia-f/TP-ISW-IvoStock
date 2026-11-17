@@ -37,7 +37,7 @@ for path in root.rglob("*"):
         continue
     if path.suffix.lower() in (".csv", ".tsv", ".gz", ".docx"):
         raise SystemExit(f"Dato o documento binario inesperado: {path.relative_to(root)}")
-    content = path.read_text(encoding="utf-8")
+    content = path.read_text(encoding="utf-8", errors="ignore")
     assert not any(value in content for value in secrets), (
         f"Secreto local en {path.relative_to(root)}"
     )

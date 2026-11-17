@@ -1,7 +1,9 @@
-.PHONY: up down test check
+.PHONY: up down test check provision
 up:
 	python scripts/configurar.py
 	docker compose up --build -d --wait
+provision:
+	docker compose run --rm cli python scripts/provisionar_tiendas.py
 down:
 	docker compose down
 test:

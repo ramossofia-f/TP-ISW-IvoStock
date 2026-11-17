@@ -15,6 +15,7 @@ CAMPOS_TRAZA = (
     "status",
     "http_status",
     "error",
+    "user",
 )
 
 
