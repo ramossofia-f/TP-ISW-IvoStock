@@ -36,10 +36,24 @@ def test_only_current_statistics_and_provider_are_sent(configure):
     assert decision["source"] == "ml" and decision["accepted"]
 
 
-def test_ml_is_authoritative_even_when_fixed_rules_disagree(configure):
-    configure(lambda request: httpx.Response(200, json={
-        "accepted": True, "score": 0.2, "version": "a" * 64}))
-    assert client.evaluate(1, {**METRICS, "p": 0.9})["accepted"]
+@pytest.mark.parametrize("ml_accepts", [True, False])
+@pytest.mark.parametrize("p", [0, 0.5, 0.50001, 0.9, 1])
+def test_quarantine_is_guard_or_ml(configure, ml_accepts, p):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={
+            "accepted": ml_accepts, "score": 0.2 if ml_accepts else -0.2, "version": "a" * 64})
+
+    configure(handler)
+    result = client.evaluate(1, {**METRICS, "p": p})
+    assert result["accepted"] is (p <= 0.5 and ml_accepts)
+    assert result["guard_accepted"] is (p <= 0.5)
+    assert result["fallback_reason"] is None
+    assert len(calls) == (1 if p <= 0.5 else 0)
+    assert result["source"] == ("ml" if p <= 0.5 else "rules")
+    assert result["version"] == ("a" * 64 if p <= 0.5 else None)
 
 
 @pytest.mark.parametrize("p,expected", [(0, True), (0.5, True), (0.51, False)])
@@ -49,7 +63,7 @@ def test_outage_uses_rules_without_changing_their_threshold(configure, p, expect
     configure(down)
     result = client.evaluate(1, {**METRICS, "p": p})
     assert result["source"] == "rules" and result["accepted"] is expected
-    assert result["fallback_reason"] == "unavailable"
+    assert result["fallback_reason"] == ("unavailable" if expected else None)
 
 
 def test_missing_configuration_is_explicit(monkeypatch):

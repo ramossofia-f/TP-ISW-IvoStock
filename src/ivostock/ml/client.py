@@ -32,13 +32,17 @@ async def request_classification(url, token, provider, metrics):
 
 
 def evaluate(provider, metrics):
+    # RF-13: ningún modelo ni respaldo puede liberar lo que frena la guarda.
+    if metrics["p"] > 0.5:
+        return {"source": "rules", "fallback_reason": None, "version": None, "score": None,
+                "guard_accepted": False, "accepted": False}
     url, token = os.getenv("ML_URL", ""), os.getenv("ML_TOKEN", "")
     reason = "unconfigured"
     if url and token:
         try:
             result, reason = asyncio.run(request_classification(url, token, provider, metrics))
             if result is not None:
-                return {"source": "ml", "fallback_reason": None, **result}
+                return {"source": "ml", "fallback_reason": None, "guard_accepted": True, **result}
         except (TimeoutError, httpx.TimeoutException):
             reason = "timeout"
         except (ValueError, TypeError, KeyError, ValidationError):
@@ -48,4 +52,4 @@ def evaluate(provider, metrics):
     log.info("Validación por reglas de respaldo", extra={"component": "ml", "provider": provider,
                                                        "fallback_reason": reason})
     return {"source": "rules", "fallback_reason": reason, "version": None, "score": None,
-            "accepted": metrics["p"] <= 0.5}
+            "guard_accepted": True, "accepted": True}

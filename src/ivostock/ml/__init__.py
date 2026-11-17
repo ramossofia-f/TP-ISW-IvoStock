@@ -1,1 +1,1 @@
-"""Detector global de normalidad, reglas de respaldo y aprendizaje durable (RF-27, ADR-0016)."""
+"""Normalidad adicional a la guarda obligatoria y aprendizaje durable (RF-27, ADR-0016 propuesto)."""
