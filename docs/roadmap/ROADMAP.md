@@ -45,7 +45,16 @@ El referente coordina el tramo, abre su pull request y responde por su criterio 
 
 Del tramo siguiente ya están el tablero de corridas y la búsqueda de sugerencias por SKU; sigue pendiente modificar un proveedor (RF-04).
 
-Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas. El componente de ML requiere una decisión específica antes de implementarlo.
+### Plan del tramo 11/11–17/11 (ML)
+
+El componente se define en el [ADR-0015](../adr/0015-detector-de-feeds-anomalos.md): un detector de corridas defectuosas que sólo puede agregar cuarentenas a la guarda. Para que ambos escriban y revisen código, el tramo se divide en dos pull requests; quien no lo escribe, lo revisa.
+
+| Parte | Resultado verificable | Autor | Revisa |
+|---|---|---|---|
+| Datos, variables y entrenamiento | Bajas dispersas en el generador, `ivostock.ml` con las variables, conjunto con semilla, `modelo.json` reproducible y reporte de evaluación por escenario contra la guarda | Sofía Ramos | Francisco Ortega |
+| Inferencia y monitoreo | Puntaje en la ingesta con cuarentena de motivo `ml`, `ml-report` con deriva (PSI) y motivo visible en el tablero | Francisco Ortega | Sofía Ramos |
+
+Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas.
 
 ## Preparación de la presentación E2
 
