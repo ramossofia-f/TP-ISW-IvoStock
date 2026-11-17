@@ -64,6 +64,27 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+  ml:
+    <<: *app
+    command: ["uvicorn", "ivostock.ml.api:app", "--host", "0.0.0.0", "--port", "8002"]
+    ports: ["127.0.0.1:${ML_HOST_PORT:-8002}:8002"]
+    healthcheck:
+      # El arranque no espera las diez observaciones: readiness se observa por separado.
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8002/health/live').raise_for_status()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  ml-train:
+    <<: *app
+    build:
+      context: .
+      target: training
+    command: ["python", "-m", "ivostock.worker", "ml-train"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "ivostock.health", "ml-train"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
   ingest:
     <<: *app
     command: ["python", "-m", "ivostock.worker", "ingest"]
@@ -110,7 +131,7 @@ services:
   metrics:
     <<: *app
     command: ["uvicorn", "ivostock.metrics_service:app", "--host", "0.0.0.0", "--port", "8002"]
-    ports: ["127.0.0.1:${METRICS_HOST_PORT:-8002}:8002"]
+    ports: ["127.0.0.1:${METRICS_HOST_PORT:-8004}:8002"]
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8002/health').raise_for_status()"]
       interval: 30s
@@ -127,6 +148,7 @@ services:
       API_URL: ${OBSERVER_API_URL:-http://api:8000}
       SIMULATOR_URL: ${OBSERVER_SIMULATOR_URL:-http://simulator:8001}
       PROVIDER_URL: ${OBSERVER_PROVIDER_URL:-http://provider:8081}
+      ML_URL: ${OBSERVER_ML_URL:-http://ml:8002}
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8003/health').raise_for_status()"]
       interval: 30s
@@ -146,6 +168,9 @@ services:
     volumes: ["./data:/work/data"]
   tests:
     <<: *app
+    build:
+      context: .
+      target: training
     profiles: ["test"]
     restart: "no"
     environment:

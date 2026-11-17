@@ -1,5 +1,5 @@
 FROM ghcr.io/astral-sh/uv:0.10.4 AS uv
-FROM python:3.12-slim
+FROM python:3.12-slim AS base
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /work
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1
@@ -15,3 +15,11 @@ COPY README.md CLAUDE.md ./
 RUN useradd --create-home app && chown -R app:app /work
 USER app
 CMD ["ivostock", "--help"]
+
+# Sólo el entrenador incorpora sklearn/numpy/scipy; inferencia y motor usan Python puro.
+FROM base AS training
+USER root
+RUN uv sync --frozen --no-editable --group ml
+USER app
+
+FROM base AS runtime

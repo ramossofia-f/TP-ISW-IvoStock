@@ -29,6 +29,7 @@
     </nav>
 
     <main id="app-content">
+        <div id="quarantine-notice" class="notice hidden" role="alert" aria-live="polite"></div>
         <section id="view-login" class="view">
             <h2>Acceso a Configuración</h2>
             <form id="form-login">
@@ -164,7 +165,7 @@
                         <tr>
                             <th>Corrida</th><th>Proveedor</th><th>Estado</th><th>Inicio</th><th>Fin</th>
                             <th>SKU</th><th>Filas descartadas</th><th>Errores de parseo</th>
-                            <th>Sospecha</th><th>Detalle</th>
+                            <th>Regla de respaldo</th><th>Detalle</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -177,7 +178,7 @@
             </div>
         </section>
         <section id="view-monitoreo" class="view hidden">
-            <h2>Monitoreo</h2>
+            <h2>Monitoreo técnico</h2>
             <p id="metricas-muestra"></p>
             <h3>Disponibilidad · últimas 24 horas</h3>
             <p id="metricas-periodo"></p>
@@ -198,6 +199,20 @@
             <div class="table-wrap">
                 <table id="table-heartbeats">
                     <thead><tr><th>Worker</th><th>Activo (1/0)</th><th>Último heartbeat</th><th>Antigüedad (s)</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <h3>Componente ML</h3>
+            <div class="table-wrap">
+                <table id="table-ml-estado">
+                    <thead><tr><th>Métrica</th><th>Valor</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <h3>Observaciones incorporadas al modelo por proveedor</h3>
+            <div class="table-wrap">
+                <table id="table-ml-proveedores">
+                    <thead><tr><th>Proveedor</th><th>Observaciones incorporadas</th></tr></thead>
                     <tbody></tbody>
                 </table>
             </div>

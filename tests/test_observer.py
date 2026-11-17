@@ -15,12 +15,22 @@ def test_missing_authentication_performs_no_observation(monkeypatch):
     assert client.get("/openapi.json").status_code == 401
 
 
-def test_observation_reads_state_and_pings_components_without_writes(monkeypatch):
+@pytest.mark.parametrize(
+    "ml_url,components",
+    [
+        ("", {"api", "simulator", "provider"}),
+        ("http://ml:8002", {"api", "simulator", "provider", "ml", "ml_ready"}),
+    ],
+)
+def test_observation_reads_state_and_pings_components_without_writes(
+    monkeypatch, ml_url, components
+):
     calls = []
+    monkeypatch.setenv("ML_URL", ml_url)
 
     def get(url, **kwargs):
         calls.append((url, kwargs))
-        body = {"status": "ok"} if url.endswith("/health") else {"samples": 7}
+        body = {"status": "ok"} if "/health" in url else {"samples": 7}
         return httpx.Response(200, json=body, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(observer.httpx, "get", get)
@@ -28,8 +38,9 @@ def test_observation_reads_state_and_pings_components_without_writes(monkeypatch
     result = client.get("/metrics", headers={"Authorization": "Bearer test-only"})
     assert result.status_code == 200
     assert result.json()["summary"] == {"samples": 7}
-    assert set(result.json()["http_components"]) == {"api", "simulator", "provider"}
-    assert len(calls) == 5
+    assert set(result.json()["http_components"]) == components
+    assert len(calls) == 2 + len(components)
+    assert not any("/classify" in url for url, _ in calls)
     assert all("test-only" not in url for url, _ in calls)
 
 

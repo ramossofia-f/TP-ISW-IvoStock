@@ -1,4 +1,4 @@
-"""Entrena y evalúa el detector de corridas defectuosas (ADR-0015).
+"""Experimento histórico del ADR-0015: no activa ni entrena el modelo de la aplicación.
 
 Uso: uv run --group ml python scripts/ml_entrenar.py [--semilla 15] [--base data/feeds/celesa.csv]
 
@@ -112,6 +112,10 @@ def tabla(evaluacion):
 def reporte(datos, real=None):
     lineas = [
         "# Evaluación del detector de corridas defectuosas",
+        "",
+        "Registro histórico del ADR-0015, sustituido por el "
+        "[ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md). "
+        "Estas cifras no describen el detector de normalidad vigente.",
         "",
         "Generado por `scripts/ml_entrenar.py` "
         "([ADR-0015](../adr/0015-detector-de-feeds-anomalos.md)). Los escenarios y sus etiquetas "

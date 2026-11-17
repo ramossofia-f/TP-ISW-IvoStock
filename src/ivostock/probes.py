@@ -9,11 +9,15 @@ import httpx
 
 
 def endpoints():
-    return {
+    urls = {
         "api": os.getenv("API_URL", "http://api:8000") + "/health",
         "simulator": os.getenv("SIMULATOR_URL", "http://simulator:8001") + "/health",
         "provider": os.getenv("PROVIDER_URL", "http://provider:8081") + "/health",
     }
+    ml_url = os.getenv("ML_URL", "").rstrip("/")
+    if ml_url:
+        urls.update({"ml": ml_url + "/health/live", "ml_ready": ml_url + "/health"})
+    return urls
 
 
 def probe(name, url):
@@ -36,5 +40,6 @@ def probe(name, url):
 
 
 def http_components():
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        return dict(pool.map(lambda pair: probe(*pair), endpoints().items()))
+    urls = endpoints()
+    with ThreadPoolExecutor(max_workers=len(urls)) as pool:
+        return dict(pool.map(lambda pair: probe(*pair), urls.items()))

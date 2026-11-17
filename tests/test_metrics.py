@@ -81,6 +81,7 @@ def test_availability_has_a_fixed_denominator_and_keeps_api_and_engine_separate(
     assert summary["missing_samples"] == 1
     assert summary["availability"]["api"]["availability_percent"] == pytest.approx(100 / 3)
     assert summary["availability"]["engine"]["availability_percent"] == pytest.approx(200 / 3)
+    assert summary["availability"]["ml_ready"]["availability_percent"] == 0
 
 
 @pytest.mark.integration

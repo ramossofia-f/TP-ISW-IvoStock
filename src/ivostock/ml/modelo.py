@@ -1,4 +1,4 @@
-"""Inferencia del detector de corridas defectuosas en Python puro (ADR-0015).
+"""Experimento histórico binario (ADR-0015); la aplicación usa `normalidad.py` (ADR-0016).
 
 `modelo.json` guarda medias, escalas, coeficientes e intercepto de una regresión logística
 entrenada con `scripts/ml_entrenar.py`. Cargarlo no ejecuta código: es aritmética.

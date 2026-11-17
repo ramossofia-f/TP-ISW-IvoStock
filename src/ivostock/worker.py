@@ -26,6 +26,10 @@ def tick(engine, kind):
         return publish_once(engine)
     if kind == "catalog":
         return import_page(engine)
+    if kind == "ml-train":
+        from ivostock.ml.training import train_once
+
+        return train_once(engine)
     with engine.begin() as conn:
         due = rows(
             conn,
@@ -43,7 +47,7 @@ def tick(engine, kind):
 def main():
     configurar(sys.stdout)
     ap = argparse.ArgumentParser()
-    ap.add_argument("kind", choices=["ingest", "compare", "publish", "catalog"])
+    ap.add_argument("kind", choices=["ingest", "compare", "publish", "catalog", "ml-train"])
     ap.add_argument("--once", action="store_true")
     args = ap.parse_args()
     engine = database()

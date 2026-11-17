@@ -1,4 +1,4 @@
-# ADR-0016: Estado de métricas interno y observador de sólo lectura
+# ADR-0017: Estado de métricas interno y observador de sólo lectura
 
 Estado: aceptado. Fecha: 17/11/2026.
 
@@ -51,6 +51,22 @@ notificaciones ni etiquetas de cumplimiento. El tablero también muestra valores
 La consulta requiere un token de operador validado por el servicio de métricas; no se crean
 otro login ni otra base de usuarios. Las sesiones pueden iniciarse en métricas si la API cae.
 
+Monitoreo es una herramienta de administración técnica. Para el TP sigue visible para todas
+las cuentas precreadas porque comparten el único perfil de permisos existente. Esta excepción
+documentada permite demostrar operación sin implementar RBAC. Los recorridos de negocio
+conservan ocultos los detalles de infraestructura y los puntajes/versiones de ML; la vista
+Monitoreo y `/metrics/*` son la superficie explícita de diagnóstico técnico. Separar usuarios
+y administradores requiere aplicar autorización también en los endpoints, además de la vista.
+
+Se reutiliza el componente declarado en el PR #18: `GET /health/live` de ML comprueba proceso y
+esquema, y `GET /health` comprueba que puede servir inferencia. El entrenador conserva su
+heartbeat de treinta segundos, compartido por su health CLI y HTTP. No se confunde calentamiento
+(proceso activo e inferencia no lista) con ausencia del proceso. La disponibilidad del motor
+de cuatro workers se calcula aparte: operar con reglas de respaldo no acredita disponibilidad
+del modelo. El reporte de `ml.repository.report`, compartido con `ml-report`, aporta versión,
+conteos por proveedor, mínimo de historial y aprendizaje pendiente; se persiste en la muestra
+por minuto. El muestreo no entrena ni llama a `/classify` con datos nuevos.
+
 ## Consecuencias
 
 El sistema registra su serie; el observador la consulta y contrasta la accesibilidad actual.
@@ -63,6 +79,11 @@ PostgreSQL impide persistir muestras; una caída de métricas deja huecos. Sus h
 y la edad del último estado permiten distinguir respuesta de vigencia. El despliegue local del
 observador comparte máquina y red con el sistema; desplegarlo en otra máquina requiere acceso
 a los endpoints, sin publicar PostgreSQL. Las métricas operativas y OpenAPI requieren sesión.
+
+El ADR se numera 0017 y la migración de métricas 0008 para conservar los identificadores 0016 y
+0007 de ML del PR #18. En el host, ML conserva 8002 y métricas usa 8004; dentro de cada contenedor
+ambos procesos pueden usar 8002. Los volúmenes de la prueba anterior a esta integración se
+conservan aparte: no se reinterpretan como una base que ya tenga la migración de ML.
 
 Los percentiles se calculan sobre mediciones individuales, nunca promediando percentiles por
 minuto. Se informan también pendientes, reemplazos y duraciones desconocidas; no se declara

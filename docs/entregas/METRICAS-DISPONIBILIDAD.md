@@ -1,14 +1,15 @@
 # Verificación de métricas y observador
 
-Fecha: 17/11/2026. Desarrollo aislado en la rama `feat/metricas-disponibilidad`, basada en
-`1260c81`; no modifica el worktree de inferencia y monitoreo de ML.
+Fecha: 17/11/2026. Desarrollo aislado en la rama `feat/metricas-disponibilidad`, inicialmente
+basada en `1260c81`. La integración del monitoreo de ML incorpora localmente `5911066` del PR #18;
+no modifica su worktree ni fusiona ese PR en GitHub.
 
 ## Alcance
 
 Servicio interno con muestreo por minuto y retención de siete días, consultas autenticadas
 compartidas con el tablero y observador HTTP sin persistencia ni alertas. Se reutilizan las
 consultas operativas, sesiones y heartbeats; se agrega la información temporal que no existía
-para medir publicación completa por revisión y tienda. Ver [ADR-0016](../adr/0016-metricas-y-observador.md).
+para medir publicación completa por revisión y tienda. Ver [ADR-0017](../adr/0017-metricas-y-observador.md).
 
 ## Comprobación
 
@@ -31,9 +32,43 @@ sintéticos: diez SKU y cinco vínculos en cada tienda.
 | Muestreo y retención | Pruebas con PostgreSQL real: un registro por minuto, consultas sin escritura, faltantes en el denominador y eliminación de muestras de más de siete días |
 | Publicación y acuses perdidos | Pruebas con HTTP real: primer efecto conservado al repetir el envío, corte de cero con revisión propia y origen conservado durante revisión manual |
 
-La única advertencia de la suite es una deprecación ya existente del cliente de pruebas de
+Estas comprobaciones corresponden a la instrumentación anterior a incorporar el PR #18.
+La única advertencia de esa suite es una deprecación ya existente del cliente de pruebas de
 Starlette/httpx. El recorrido de navegador usa un perfil temporal aislado. No se declara
 ejecutada una campaña de 24 horas por tener el servicio implementado.
+
+## Integración del monitoreo técnico con el PR #18
+
+Se mantiene la pestaña accesible para todas las cuentas del TP y se documenta que corresponde
+a administración de plataforma: es una simplificación del único perfil de permisos, sin RBAC.
+Los recorridos de negocio siguen filtrando versiones y puntajes de ML.
+
+La sección ML reutiliza `/health/live`, `/health`, el heartbeat de treinta segundos del entrenador
+y `ml.repository.report`. El reporte y la serie por minuto incluyen versión, observaciones
+incorporadas por proveedor y aprendizaje pendiente, separando proceso activo de inferencia lista.
+El backend de ingesta y el modelo no se vuelven a implementar en métricas.
+
+El ADR de métricas pasa a 0017 y su migración a 0008, después de la 0007 de ML. El puerto host
+de métricas pasa a 8004 para conservar 8002 de ML. La verificación conjunta utiliza otro proyecto
+de Compose y volúmenes nuevos: la base del ensayo anterior no se reinterpreta como migrada a ML.
+El proyecto conjunto es `ivostock-metrics-ml-check`; conserva la vista en localhost:18000 y
+usa datos sintéticos nuevos. Los contenedores del ensayo anterior quedan detenidos y sus
+volúmenes conservados. El entorno de operación original y el worktree de ML siguen intactos.
+
+| Comprobación conjunta | Resultado |
+|---|---|
+| Suite completa en Docker | 312 aprobadas en 257,75 s; una omitida porque la imagen no trae Node |
+| Avisos, privacidad, interfaz y observador en el host con Node | 19 aprobadas; incluye la prueba omitida de avisos |
+| Ruff, documentación, secretos y diferencias de Git | Correctos; 31 documentos y 17 ADRs |
+| Arranque real sin historial | Proceso ML activo, entrenador activo, inferencia no lista y cero observaciones; estado persistido y mostrado en Chrome |
+| Calentamiento real y corrida posterior | Diez aceptados sintéticos procesados por el entrenador y una corrida posterior decidida por ML; once incorporados, mínimo diez, cero aprendizajes pendientes |
+| Monitoreo después del aprendizaje | Proceso, inferencia y entrenador activos; versión y conteo por proveedor visibles en Chrome, con cero errores JavaScript |
+| Separación de responsabilidades | El muestreo reutiliza el reporte y las sondas; no genera observaciones ni ejecuta entrenamiento. Los endpoints de corridas mantienen filtrados los campos de ML |
+
+Las fechas del tablero usan el reloj del navegador y formato explícito de 24 horas, evitando
+que una preferencia regional vuelva ambigua la hora del último entrenamiento. Estas
+comprobaciones demuestran instrumentación y funcionamiento del circuito reducido; no acreditan
+precisión del modelo con datos reales ni los ensayos RNF-02/RNF-07/RNF-09/RNF-15.
 
 ## Pendiente de medir
 

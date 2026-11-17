@@ -4,6 +4,7 @@ from ivostock.db import database, rows
 
 WORKERS = ("ingest", "compare", "publish", "catalog")
 HEARTBEAT_SECONDS = 660
+WORKER_LIMITS = dict.fromkeys(WORKERS, HEARTBEAT_SECONDS) | {"ml-train": 30}
 
 
 def worker_components(conn):
@@ -17,11 +18,11 @@ def worker_components(conn):
     }
     return {
         name: {
-            "available": name in found and float(found[name]["age_seconds"]) < HEARTBEAT_SECONDS,
+            "available": name in found and float(found[name]["age_seconds"]) < limit,
             "last_seen_at": found[name]["at"] if name in found else None,
             "age_seconds": float(found[name]["age_seconds"]) if name in found else None,
         }
-        for name in WORKERS
+        for name, limit in WORKER_LIMITS.items()
     }
 
 

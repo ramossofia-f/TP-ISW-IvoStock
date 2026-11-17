@@ -4,15 +4,17 @@ Las consultas son de sólo lectura. Únicamente sample() persiste una muestra po
 """
 
 import json
+import os
 from datetime import UTC, datetime, timedelta
 
 from ivostock.db import execute, ownership, rows
 from ivostock.health import WORKERS, worker_components
+from ivostock.ml.repository import report as ml_report
 from ivostock.probes import http_components
 from ivostock.services import monitor, runs_summary
 
 RETENTION = timedelta(days=7)
-COMPONENTS = ("api", "simulator", "provider", *WORKERS)
+COMPONENTS = ("api", "simulator", "provider", *WORKERS, "ml", "ml_ready", "ml-train")
 
 
 def minute(at):
@@ -84,6 +86,7 @@ def sample(engine, check_http=http_components):
         components = check_http()
         operations = monitor(engine)
         ingestion = runs_summary(engine)
+        ml = {"configured": bool(os.getenv("ML_URL")), **ml_report(engine)}
         with conn.begin():
             components.update(worker_components(conn))
             payload = {
@@ -91,6 +94,7 @@ def sample(engine, check_http=http_components):
                 "components": components,
                 "operations": operations,
                 "ingestion": ingestion,
+                "ml": ml,
                 "publication": publications(conn, at - timedelta(hours=24), at),
             }
             execute(
