@@ -21,6 +21,8 @@ const state = {
     view: null,
     poll: null,
     pollBusy: false,
+    noticePoll: null,
+    noticeBusy: false,
     busy: 0,
     toastTimer: null,
     availableKey: '',
@@ -254,11 +256,16 @@ function startSession(username) {
     $('who').textContent = username;
     $('main-nav').classList.remove('hidden');
     switchView('proveedores');
+    startQuarantineNotices();
 }
 
 function endSession(message) {
     const wasActive = state.user !== null;
     stopPolling();
+    if (state.noticePoll) clearInterval(state.noticePoll);
+    state.noticePoll = null;
+    $('quarantine-notice').replaceChildren();
+    $('quarantine-notice').classList.add('hidden');
     sessionStorage.removeItem(TOKEN_KEY);
     state.user = null;
     state.view = null;
@@ -317,8 +324,39 @@ async function restoreSession() {
 
 // --- Proveedores --------------------------------------------------------------------------
 
+function renderQuarantineNotices(providers) {
+    const notice = $('quarantine-notice');
+    const affected = providers.filter((p) => p.active && p.quarantine_run_id !== null);
+    notice.replaceChildren(...affected.map((p) => h('p', {},
+        `El proveedor ${p.name} tiene la corrida #${p.quarantine_run_id} en cuarentena. ` +
+        'Se conserva el último inventario aceptado. Revisá el tablero de Corridas.',
+    )));
+    notice.classList.toggle('hidden', affected.length === 0);
+}
+
+function startQuarantineNotices() {
+    if (state.noticePoll) clearInterval(state.noticePoll);
+    state.noticePoll = setInterval(async () => {
+        if (!state.user || state.noticeBusy) return;
+        const token = sessionStorage.getItem(TOKEN_KEY);
+        state.noticeBusy = true;
+        try {
+            const providers = await api('GET', '/providers', { quiet: true });
+            // Una respuesta de una sesión anterior no puede volver a mostrar sus avisos.
+            if (state.user && sessionStorage.getItem(TOKEN_KEY) === token) {
+                renderQuarantineNotices(providers);
+            }
+        } catch {
+            // Conserva el aviso conocido; el próximo sondeo reintenta.
+        } finally {
+            state.noticeBusy = false;
+        }
+    }, POLL_MS);
+}
+
 async function loadProviders() {
     const providers = await api('GET', '/providers');
+    if (state.user) renderQuarantineNotices(providers);
     state.providers = providers;
     state.providerNames = new Map(providers.map((p) => [p.id, p.name]));
     fillBody(
@@ -796,9 +834,9 @@ async function loadRunsView() {
 function runDetail(run) {
     const m = run.metrics;
     if (run.error) return run.error;
+    if (run.status === 'quarantined') return 'Cambio sospechoso respecto de la corrida anterior.';
     if (m.reused_inventory) return 'Fuente sin cambios: se reutilizó el inventario.';
     if (m.parse_alert) return 'Más del 10 % de filas con error de parseo.';
-    if (run.status === 'quarantined') return 'Cambio sospechoso respecto de la corrida anterior.';
     return '';
 }
 
