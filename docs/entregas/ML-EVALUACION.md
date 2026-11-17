@@ -1,5 +1,10 @@
 # Evaluación del detector de corridas defectuosas
 
+**Registro histórico del clasificador binario del ADR-0015.** Fue sustituido por el detector de
+normalidad del [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md). Estas cifras no
+describen el modelo global vigente. El script anterior y sus artefactos se conservan para
+reproducir este experimento; no entrenan ni activan el detector de la aplicación.
+
 Generado por `scripts/ml_entrenar.py` ([ADR-0015](../adr/0015-detector-de-feeds-anomalos.md)). Los escenarios y sus etiquetas son sintéticos: estas cifras no acreditan el comportamiento con un proveedor real.
 
 En corridas defectuosas, la proporción en cuarentena es el recall; en normales, la tasa de falsas cuarentenas. «Guarda + modelo» es la decisión combinada: el modelo sólo agrega cuarentenas.

@@ -51,7 +51,7 @@ Must significa necesario para el hito indicado. POC corresponde a E2 y MVP a E3.
 | RF-11 | Contrato UTF-8 con primera fila exacta `SKU;stock`, separador `;` y dos columnas. SKU como cadena; blanco es cero; stock negativo, no entero o fuera de rango y filas mal formadas se descartan con línea y motivo. Entre duplicados vale la última ocurrencia válida | Must | POC |
 | RF-12 | Cada corrida aceptada representa el inventario completo; los SKU ausentes pasan a cero. Aceptar actualiza atómicamente el estado y su evento de comparación | Must | POC |
 | RF-13 | Validar contra el último inventario aceptado y poner en cuarentena corridas sospechosas sin modificarlo ni generar nuevas tareas | Must | POC |
-| RF-14 | Informar tasa de errores de parseo y alerta al superar 10 %, sin detener por esa tasa sola | Must | POC |
+| RF-14 | Informar tasa de errores de parseo y alerta al superar 10 %, sin bloquear automáticamente por ese umbral; la tasa participa en la evaluación integral de la corrida | Must | POC |
 | RF-15 | Comparar por vínculo contra su último stock confirmado; al vincular, usar la cantidad importada del catálogo | Must | POC |
 | RF-16 | Cola durable FIFO entre tareas disponibles, con una pendiente por vínculo; el último valor reemplaza al anterior conservando antigüedad. Los reintentos en espera no bloquean otras tareas | Must | POC |
 | RF-17 | Compartir 60 llamadas/minuto por tienda entre lecturas y escrituras, contando intentos fallidos y conservando la cuota al reiniciar | Must | POC |
@@ -64,9 +64,19 @@ Must significa necesario para el hito indicado. POC corresponde a E2 y MVP a E3.
 | RF-24 | Fallas globales de acceso a una tienda: degradación y conservación de pendientes hasta recuperar acceso | Must | POC |
 | RF-25 | Interfaz autenticada de configuración, búsqueda y tablero de corridas, tiendas, pendientes, confirmaciones y fallas | Must | MVP |
 | RF-26 | Simulador HTTP con catálogo estático generado, cantidades absolutas, semántica de cero, límite de llamadas y errores provocables | Must | POC |
-| RF-27 | Componente de ML con entrenamiento reproducible, inferencia y monitoreo; el problema y el modelo se definirán para E3 | Must | MVP |
+| RF-27 | Detector global de normalidad con proveedor codificado y estadísticas de corrida; decisión principal de ML, reglas de respaldo, aprendizaje asíncrono sólo de aceptados, versiones reproducibles y monitoreo interno | Must | MVP |
 
 ## Validación de corridas
+
+El MVP usa un único detector de normalidad para todos los proveedores. Recibe el ID del proveedor
+codificado mediante one-hot y las estadísticas de la corrida. Decide antes de aceptar inventario
+o generar eventos de comparación. Una anomalía va a cuarentena y no genera aprendizaje. El
+operador recibe un aviso con proveedor y corrida afectados; los puntajes de ML son internos.
+
+El detector aprende de los aceptados, que se asumen sanos. Para un proveedor nuevo, las reglas
+fijas deciden hasta que una versión entrenada incorpore diez aceptados suyos. También deciden
+si el servicio no puede evaluar o no responde en un segundo. El contrato de formato se valida
+siempre. Esta fórmula define las reglas de respaldo:
 
 Sea `D` la proporción de SKU del último inventario aceptado que desaparecen y `Z` la proporción de sus SKU positivos que están presentes en la corrida con cero. Los ausentes sólo cuentan en `D`.
 
@@ -77,7 +87,15 @@ p = 1 - (1 - d) * (1 - z)
 cuarentena si p > 0.5
 ```
 
-Las tolerancias son fijas; el puntaje es determinista. La primera corrida establece la base sin evaluar D/Z; los vínculos aprobados antes de ella esperan sin escrituras y se comparan al aceptarla. Una fila descartada deja ausente su SKU salvo que exista otra ocurrencia válida. Una cuarentena puede reproducirse por CLI, con la misma validación; no existe aprobación que omita la guarda.
+Las tolerancias del respaldo son fijas y su puntaje es determinista; con ML disponible y con historial suficiente, decide el modelo. La primera corrida establece la base sin evaluar D/Z; los vínculos aprobados antes de ella esperan sin escrituras y se comparan al aceptarla. Una fila descartada deja ausente su SKU salvo que exista otra ocurrencia válida. Una cuarentena puede reproducirse por CLI: vuelve a pasar por la validación vigente, sin aprobación manual que la omita.
+
+Cada aceptación conserva una observación durable, incluso cuando decidió el respaldo. El
+entrenador procesa cada pendiente sin demorar publicación, con hasta doscientos aceptados por
+proveedor y peso reducido a la mitad cada siete días. Una caída indefinida de ML no detiene al
+motor: conserva el modelo previo y el aprendizaje pendiente. Al recuperar, procesa sin duplicar
+observaciones. No se importan históricos automáticamente. Los valores de arranque y memoria son
+configurables; no constituyen garantías de precisión. El [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md)
+define el modelo, las limitaciones y la reproducción.
 
 ## Requisitos no funcionales
 

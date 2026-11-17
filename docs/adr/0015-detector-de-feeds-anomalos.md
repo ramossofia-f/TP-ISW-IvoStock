@@ -1,6 +1,7 @@
 # ADR-0015: Detector de feeds anómalos como señal adicional de la guarda
 
-Estado: propuesto. Fecha: 12/11/2026.
+Estado: sustituido por el [ADR-0016](0016-normalidad-global-y-aprendizaje-durable.md).
+Fecha original: 12/11/2026. Se conserva como registro del experimento anterior.
 
 ## Contexto y alternativas
 

@@ -12,6 +12,10 @@ flowchart LR
     HTTP[Proveedor HTTP] --> I[Ingesta]
     I --> S3[(MinIO / S3)]
     I --> PG
+    I -->|estadísticas, máximo 1 s| ML[Inferencia ML]
+    ML --> PG
+    PG --> T[Entrenador ML]
+    T --> PG
     PG --> C[Comparación]
     C --> PG
     PG --> P[Publicación]
@@ -22,7 +26,7 @@ flowchart LR
     API[API] --> PG
 ```
 
-Python 3.12, FastAPI, SQLAlchemy, Alembic, psycopg, httpx y boto3. Las dependencias se bloquean en `uv.lock`. API y workers comparten PostgreSQL; no se llaman entre sí. Sus caídas son independientes mientras PostgreSQL esté disponible. El simulador persiste en tablas propias y el motor sólo lo consulta por HTTP.
+Python 3.12, FastAPI, SQLAlchemy, Alembic, psycopg, httpx y boto3. Las dependencias se bloquean en `uv.lock`. La API de operadores y los workers comparten PostgreSQL; sus caídas son independientes mientras PostgreSQL esté disponible. Ingesta, comparación y publicación se integran mediante eventos; la ingesta sí consulta el servicio ML por HTTP con plazo y respaldo. El simulador persiste en tablas propias y el motor sólo lo consulta por HTTP.
 
 La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostock.services`. La sesión imita las acciones del frontend: exige el login con una cuenta de operador (`ivostock.auth`, la misma que usa la API) y sólo expone comandos de usuario; los comandos de ensayo y operación (`fault`, `schedule-now`, `monitor`, `compare`, `publish`) quedan en la CLI de backend. La ingesta reside en `ivostock.ingesta.servicio`, el parser y la guarda en `ivostock.ingesta`, la comparación en `ivostock.comparison`, el publicador en `ivostock.publisher` y el catálogo HTTP en `ivostock.marketplace`. La API expone `GET /health` y la autenticación (`POST /auth/login`, `POST /auth/logout`, `GET /auth/me`); todo otro endpoint declara la dependencia `require_operator` (RNF-11). La configuración (`/providers`, `/stores`, `/links`) delega en `ivostock.services` y traduce los errores tipados de `ivostock.errors` a 404, 409, 422 y 502 sin exponer detalles internos ([ADR-0011](../adr/0011-api-de-configuracion.md)); la interfaz estática de configuración se sirve en `/` y `/static/*`, rutas públicas y fuera de OpenAPI que no entregan datos operativos ([ADR-0013](../adr/0013-interfaz-estatica.md)).
 
@@ -33,7 +37,9 @@ La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostoc
 | providers, provider_preview | Configuración, próxima ingesta y SKU de la validación del alta |
 | stores, catalog | Estado, punto de control de importación (`import_offset`, `import_total`, `import_finished_at`) y catálogo importado |
 | users, sessions | Operadores precreados (hash PBKDF2) y sesiones con el SHA-256 del token y su vencimiento ([ADR-0010](../adr/0010-cuentas-y-sesiones.md)) |
-| runs, stock | Snapshot, resultado y último inventario completo aceptado |
+| runs, stock | Snapshot, resultado, decisión privada de validación y último inventario completo aceptado |
+| ml_observations | Outbox única por corrida aceptada; estadísticas, aceptación original, reintento y versión entrenada |
+| ml_models, ml_state | Versiones JSON inmutables y puntero transaccional al único modelo global vigente |
 | links | Asignación, confirmado inicial, deseado, confirmado, revisión, corte y estado |
 | comparison_events | Aviso durable creado en el commit de aceptación |
 | tasks | Una pendiente por vínculo; antigüedad, valor, revisión, backoff y lease |
@@ -55,6 +61,61 @@ La validación del alta descarga la fuente, aplica RF-11 y guarda sus SKU en `pr
 La importación de catálogo corre en el worker `catalog`, una página de hasta cien publicaciones por ciclo. Las publicaciones de la página y el nuevo `import_offset` se confirman en la misma transacción; si el proceso cae antes, la página se vuelve a pedir y `ON CONFLICT DO NOTHING` evita duplicados. Un 429 respeta `Retry-After`; 5xx o una caída de PostgreSQL se reintentan; 401 o 403 degradan la tienda y la reintentan a los treinta segundos. `store-add --wait` ejecuta la misma importación en el proceso de la CLI. Con varias tiendas pendientes se atienden por rotación (primero la menos recientemente atendida, `stores.import_served_at`) y una tienda sin cupo libre en su ventana cede el turno a las demás, de modo que una importación larga no demora a una tienda nueva ([ADR-0012](../adr/0012-tiendas-aprovisionadas-y-rotacion.md)). Un 404 durante la importación degrada la tienda con el mensaje «La tienda no existe en el marketplace». El lock evita solapamientos. Una corrida automática interrumpida se recupera mediante el tratamiento de corridas abandonadas antes de esperar el siguiente vencimiento.
 
 El comparador toma el mismo lock por proveedor. Lee su inventario vigente y los vínculos, actualiza deseados y encola diferencias, marcando eventos procesados en la misma transacción. Los vínculos en falla actualizan su deseado pero no vuelven a encolarse solos. Los cortes conservan deseado cero aunque una ingesta posterior tenga cantidad positiva.
+
+## Validación y aprendizaje de normalidad
+
+El [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md) sustituye el diseño binario
+del ADR-0015. Después de parsear y calcular D/Z/p, la ingesta llama al servicio privado
+`ivostock.ml.api` con el ID estable del proveedor y siete estadísticas: `rows`, `sku`, número de
+`discarded`, `parse_error_rate`, `D`, `Z`, `p`. No envía archivos, claves de snapshot ni URLs.
+El plazo de la petición completa es un segundo, sin reintentos. El servicio usa la versión
+publicada antes de esta aceptación. Si falta historial, hay timeout o falla el servicio/modelo,
+la ingesta aplica p>0,5 y conserva el motivo del respaldo. Con ML listo, su decisión es principal.
+
+El modelo es OneClassSVM RBF con nu=0,05 y gamma=scale. Los conteos se transforman con log1p,
+las variables numéricas se estandarizan con media y varianza ponderadas y el proveedor se agrega
+como one-hot sin escalar. La distancia firmada menor que -1e-8 indica anomalía; no es una
+probabilidad. El JSON exporta soporte, coeficientes, intercepto, gamma, transformación y categorías.
+`NormalityModel` ejecuta la función en Python puro, comprueba esquema/hash y rechaza parámetros
+inválidos. Un proveedor sólo se evalúa con una versión que incluya al menos diez aceptados suyos.
+
+Aceptar conserva en una transacción inventario, corrida, evento y `ml_observations`; poner en
+cuarentena no conserva observación ni genera evento. `runs.metrics.ml` guarda decisión, origen,
+versión, puntaje y motivo del respaldo. `RunOut` excluye ese objeto: no llega a la app del operador.
+La aceptación confirmada es el único origen de observaciones nuevas. No hay backfill automático.
+
+El worker `ml-train` usa un advisory lock global. Toma el pendiente más antiguo y reentrena con
+la ventana de hasta 200 observaciones ya procesadas por proveedor más la actual. El tiempo de
+referencia es la aceptación más reciente de esa ventana: peso 2^(-edad/7 días), normalizado.
+Mientras tanto, comparación y publicación siguen. Sólo el entrenador importa sklearn/numpy.
+Publicar el JSON, cambiar `ml_state.active_version` y confirmar la observación ocurren juntos.
+Las versiones no se actualizan ni eliminan mediante UPDATE/DELETE. Un cierre antes del commit
+conserva la versión previa y el pendiente; después del commit no se vuelve a entrenar esa corrida.
+Un error registra su tipo, conserva la versión vigente y reintenta a los treinta segundos.
+
+Cada versión conserva IDs y hash de los ejemplos, configuración, fecha de referencia y versiones
+de las bibliotecas. `ml-reproduce` reconstruye esa versión desde las observaciones retenidas,
+comprueba su hash y escribe un archivo fuera de Git sin activarlo. Una corrida estable nueva es
+otra observación; recuperar la misma observación no la duplica. Replay vuelve a evaluar con la
+versión activa y mantiene la referencia a la corrida original.
+
+| Contrato interno de ML (puerto 8002) | Comportamiento |
+|---|---|
+| `POST /classify` | Bearer `ML_TOKEN`; `provider_id` y las siete métricas; devuelve `accepted`, `score`, `version`. 503 `insufficient_history` o `invalid_model` habilita respaldo |
+| `GET /health/live` | Proceso y acceso al esquema; Compose usa esta sonda durante el arranque |
+| `GET /health` | Comprueba modelo e inferencia; 503 durante calentamiento o si no puede servir |
+| `GET /health/training` | Heartbeat del entrenador menor a treinta segundos; no confundir con disponibilidad de inferencia |
+
+Las sondas públicas sólo entregan estado genérico. Swagger/ReDoc/OpenAPI están desactivados en el
+servicio ML. El observador registra por separado proceso, inferencia y entrenamiento: que el motor
+funcione por respaldo no acredita uptime de ML. `ml-report` muestra versión, decisiones y motivos
+de respaldo, distribución de los últimos mil puntajes, pendientes, última actualización y errores
+del entrenador. No se atribuye precisión en línea sin etiquetas independientes.
+
+La API de operadores añade `quarantine_run_id` al proveedor activo si existe una cuarentena
+posterior a su última aceptación. La app actualiza un aviso global cada cinco segundos durante
+la sesión, usando sólo proveedor/corrida. Se retira después de una aceptación posterior o baja.
+El puntaje fijo p conserva el significado de respaldo; no representa la decisión de ML.
 
 ## Cola y concurrencia
 

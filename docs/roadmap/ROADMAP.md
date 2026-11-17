@@ -47,12 +47,23 @@ Del tramo siguiente ya están el tablero de corridas y la búsqueda de sugerenci
 
 ### Plan del tramo 11/11–17/11 (ML)
 
-El componente se define en el [ADR-0015](../adr/0015-detector-de-feeds-anomalos.md): un detector de corridas defectuosas que sólo puede agregar cuarentenas a la guarda. Para que ambos escriban y revisen código, el tramo se divide en dos pull requests; quien no lo escribe, lo revisa.
+El experimento binario del [ADR-0015](../adr/0015-detector-de-feeds-anomalos.md) fue sustituido el
+17/11 por el [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md): un modelo global
+de normalidad que aprende de aceptados, decide con reglas de respaldo y reentrena mediante outbox.
+Se conserva el reparto de contribuciones; las cifras del modelo anterior son evidencia histórica.
 
 | Parte | Resultado verificable | Autor | Revisa |
 |---|---|---|---|
-| Datos, variables y entrenamiento | Bajas dispersas en el generador, `ivostock.ml` con las variables, conjunto con semilla, `modelo.json` reproducible y reporte de evaluación por escenario contra la guarda | Sofía Ramos | Francisco Ortega |
-| Inferencia y monitoreo | Puntaje en la ingesta con cuarentena de motivo `ml`, `ml-report` con deriva (PSI) y motivo visible en el tablero | Francisco Ortega | Sofía Ramos |
+| Experimento anterior: datos y entrenamiento | Generador, variables, conjunto reproducible, modelo binario y evaluación conservados como histórico | Sofía Ramos | Francisco Ortega |
+| Diseño vigente: normalidad e integración | Modelo global OneClassSVM, servicio privado, aprendizaje durable, versiones reproducibles, diagnóstico interno y aviso de cuarentena | Francisco Ortega | Sofía Ramos |
+
+Implementación verificada localmente en el [registro del detector](../entregas/ML-NORMALIDAD-VERIFICACION.md):
+289 pruebas Python aprobadas en Docker y aviso comprobado con Node.js en el host. La
+[evaluación sintética vigente](../entregas/ML-NORMALIDAD-EVALUACION.md) declara detecciones y falsas
+cuarentenas. Pendientes integración en la rama de entrega, revisión del equipo y CI remoto.
+
+Para el video E3 también queda pendiente mostrar la [activación tras diez aceptados del proveedor](../entregas/ENTREGA-3-ML-PENDIENTES.md):
+si todavía no hay suficientes runs, el modelo operativo se entrega al procesar el feed n.º 10 aceptado.
 
 Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas.
 
