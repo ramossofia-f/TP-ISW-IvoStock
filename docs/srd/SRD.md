@@ -87,7 +87,7 @@ La API de la aplicación (`ivostock.main`, puerto 8000) expone la configuración
 | Endpoint de la aplicación | Contrato |
 |---|---|
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Sesión de operador; el token se guarda como SHA-256 y vence a los `SESSION_TTL_MINUTES` |
-| `POST /providers`, `GET /providers`, `POST /providers/{id}/disable` | Alta con validación de la fuente (SKU, tasa de errores, muestra, próxima ingesta); listado sin URL; baja que lleva a cero los vínculos |
+| `POST /providers`, `GET /providers`, `PATCH /providers/{id}`, `POST /providers/{id}/disable` | Alta con validación de la fuente (SKU, tasa de errores, muestra, próxima ingesta); listado sin URL; modificación de nombre o URL (RF-04) que valida una URL nueva igual que el alta, toma el lock de ingesta del proveedor y conserva inventario aceptado y vínculos, sin devolver la URL; baja que lleva a cero los vínculos |
 | `GET /providers/{id}/suggestions`, `POST /providers/{id}/approve` | Sugerencias por SKU con el último inventario aceptado, sin descargar; aprobación de todas, una selección o las primeras N; una publicación con vínculo activo se rechaza (RF-07) |
 | `GET /stores`, `GET /stores/available`, `POST /stores` | Tiendas con progreso de importación; las preconfiguradas en `MARKETPLACE_STORES`; incorporar una tienda que ya existe en el marketplace |
 | `GET /links`, `GET /links/summary`, `POST /links/{id}/off`, `POST /links/{id}/resume` | Vínculos paginados y contadores; apagado con cero confirmado antes de desactivar; reanudación de un vínculo fallido |

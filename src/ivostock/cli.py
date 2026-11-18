@@ -28,6 +28,10 @@ def parser():
     p = commands.add_parser("provider-add")
     p.add_argument("name")
     p.add_argument("url")
+    p = commands.add_parser("provider-edit", help="Cambiar nombre o URL; una URL nueva se valida")
+    p.add_argument("provider", type=int)
+    p.add_argument("--name")
+    p.add_argument("--url")
     p = commands.add_parser("provider-disable")
     p.add_argument("provider", type=int)
     p = commands.add_parser(
@@ -167,6 +171,8 @@ def run(args):
     match args.command:
         case "provider-add":
             return services.add_provider(engine, args.name, args.url)
+        case "provider-edit":
+            return services.update_provider(engine, args.provider, args.name, args.url)
         case "provider-disable":
             return services.cut(engine, args.provider)
         case "store-add":

@@ -73,6 +73,7 @@ Es la base de la interfaz: los mismos servicios que la CLI, expuestos con sesió
 |---|---|
 | `POST /providers` | Alta: descarga la fuente y devuelve SKU, tasa y alerta de errores de parseo, muestra, próxima ingesta y sugerencias por tienda |
 | `GET /providers` | Lista (sin la URL) |
+| `PATCH /providers/{id}` | Modificación (RF-04): `{"name": ...}`, `{"url": ...}` o ambos. Una URL nueva se descarga y valida como en el alta antes de guardarse; el inventario aceptado y los vínculos se conservan, y la guarda frena la próxima ingesta si la fuente nueva difiere demasiado |
 | `POST /providers/{id}/disable` | Baja: lleva a cero sus vínculos antes de desactivar (202) |
 | `GET /stores/available` | Tiendas con credenciales preconfiguradas (`MARKETPLACE_STORES`) y si ya fueron incorporadas |
 | `POST /stores` | Incorpora una tienda disponible que existe en el marketplace e importa su catálogo en segundo plano; nunca la crea |
@@ -179,6 +180,7 @@ El generador inicializa cantidades desde el feed; una vinculación coincidente n
 
 ```sh
 docker compose run --rm cli ivostock off ID_VINCULO
+docker compose run --rm cli ivostock provider-edit ID_PROVEEDOR --name NUEVO_NOMBRE --url NUEVA_URL
 docker compose run --rm cli ivostock provider-disable ID_PROVEEDOR
 docker compose run --rm cli ivostock status links
 docker compose run --rm cli ivostock status runs

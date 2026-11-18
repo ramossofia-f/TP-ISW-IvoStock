@@ -15,6 +15,7 @@ from ivostock.logs import configurar
 USER_COMMANDS = {
     "store-add",
     "provider-add",
+    "provider-edit",
     "provider-disable",
     "suggest",
     "approve",

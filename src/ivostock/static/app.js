@@ -26,6 +26,7 @@ const state = {
     availableKey: '',
     providers: [],
     providerNames: new Map(),
+    editingProvider: null,
     suggestions: null,
     linksOffset: 0,
     nextOffset: null,
@@ -333,7 +334,16 @@ async function loadProviders() {
                 td(fmtDate(p.next_run_at)),
                 td(p.last_accepted_run === null ? '—' : `#${p.last_accepted_run}`),
                 h('td', { title: p.last_error || null }, shorten(p.last_error, 120) || '—'),
-                td(p.active ? button('Dar de baja', () => disableProvider(p), 'danger') : ''),
+                td(
+                    p.active
+                        ? h(
+                              'div',
+                              { class: 'actions' },
+                              button('Modificar', () => openEditProvider(p), 'secondary'),
+                              button('Dar de baja', () => disableProvider(p), 'danger'),
+                          )
+                        : '',
+                ),
             ),
         ),
         'Todavía no hay proveedores.',
@@ -425,6 +435,54 @@ function renderProviderResult(r) {
     }
     box.replaceChildren(...parts);
     box.classList.remove('hidden');
+}
+
+// RF-04: la API nunca devuelve la URL, así que el campo arranca vacío y vacío la conserva.
+function openEditProvider(provider) {
+    state.editingProvider = provider;
+    $('edit-titulo').textContent = `Modificar «${provider.name}» (#${provider.id})`;
+    $('edit-nombre').value = provider.name;
+    $('edit-url').value = '';
+    $('edit-validation').classList.add('hidden');
+    $('form-editar-proveedor').classList.remove('hidden');
+    $('edit-nombre').focus();
+}
+
+function closeEditProvider() {
+    state.editingProvider = null;
+    $('form-editar-proveedor').reset();
+    $('form-editar-proveedor').classList.add('hidden');
+}
+
+async function onEditProvider(event) {
+    event.preventDefault();
+    const provider = state.editingProvider;
+    if (!provider) return;
+    const box = $('edit-validation');
+    box.classList.add('hidden');
+    const body = {};
+    const name = $('edit-nombre').value.trim();
+    const url = $('edit-url').value.trim();
+    if (name !== provider.name) body.name = name;
+    if (url) body.url = url;
+    if (Object.keys(body).length === 0) {
+        showInline(box, 'No hay cambios para guardar.', 'warn');
+        return;
+    }
+    let result;
+    try {
+        result = await api('PATCH', `/providers/${Number(provider.id)}`, { body, silent: true });
+    } catch (error) {
+        showInline(box, error.message, 'error');
+        return;
+    }
+    closeEditProvider();
+    let message = result.source_validated
+        ? `«${result.name}» actualizado: fuente nueva validada con ${fmtNumber(result.sku)} SKU.`
+        : `«${result.name}» actualizado.`;
+    if (result.parse_alert) message += ' Alerta: supera el 10 % de errores de parseo.';
+    toast(message);
+    await guard(loadProviders)();
 }
 
 async function disableProvider(provider) {
@@ -862,6 +920,8 @@ function init() {
         link.addEventListener('click', () => switchView(link.dataset.view));
     }
     $('form-proveedor').addEventListener('submit', guard(onCreateProvider));
+    $('form-editar-proveedor').addEventListener('submit', guard(onEditProvider));
+    $('edit-cancelar').addEventListener('click', closeEditProvider);
     $('btn-incorporar').addEventListener('click', guard(onIncorporate));
     $('btn-buscar-sku').addEventListener('click', guard(onSearch));
     $('btn-aprobar-seleccion').addEventListener('click', guard(onApproveSelection));

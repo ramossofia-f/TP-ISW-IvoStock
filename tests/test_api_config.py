@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from ivostock import cli, marketplace, services
 from ivostock.api_models import LinkOut, ProviderOut
-from ivostock.db import execute, rows
+from ivostock.db import execute, ownership, rows
 from ivostock.errors import Conflict, NotFound, ServiceError, UpstreamError
 from ivostock.publisher import publish_once
 from tests.helpers import admin, create_provider, drain, import_catalogs, links, seed
@@ -151,6 +151,126 @@ def test_disable_unknown_provider_and_bad_ids(api):
     assert api.post("/providers/999/disable").json() == {"detail": "Proveedor inexistente"}
     for bad in ("0", "-1", "abc", str(2**63)):
         assert api.post(f"/providers/{bad}/disable").status_code == 422
+
+
+# --- Modificación de proveedores (RF-04) ----------------------------------------------------
+
+
+def provider_row(engine, provider):
+    with engine.begin() as conn:
+        return dict(rows(conn, "SELECT name,url FROM providers WHERE id=:p", p=provider)[0])
+
+
+def second_source(feed_server, stock):
+    path = feed_server["path"].with_name("otro.csv")
+    path.write_text("SKU;stock\n" + "".join(f"{s};{q}\n" for s, q in stock.items()), "utf-8")
+    return feed_server["url"].replace("feed.csv", "otro.csv")
+
+
+def test_rename_provider_without_downloading_the_source(api, engine, feed_server):
+    provider = create_provider(api, feed_server, "Viejo")
+    downloads = len(feed_server["hits"])
+    response = api.patch(f"/providers/{provider}", json={"name": "  Nuevo  "})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "Nuevo" and body["source_validated"] is False
+    assert body["sku"] is None and body["preview"] is None
+    assert len(feed_server["hits"]) == downloads
+    assert provider_row(engine, provider) == {"name": "Nuevo", "url": feed_server["url"]}
+
+
+def test_new_url_is_validated_and_replaces_the_preview(api, engine, feed_server):
+    add_store(api, engine, "T1", items=3)
+    provider = create_provider(api, feed_server)
+    url = second_source(feed_server, {"B001": 4, "B002": 0})
+    response = api.patch(f"/providers/{provider}", json={"url": url})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source_validated"] is True and body["sku"] == 2
+    assert body["parse_error_rate"] == 0 and body["parse_alert"] is False
+    assert body["preview"] == [{"sku": "B001", "stock": 4}, {"sku": "B002", "stock": 0}]
+    assert url not in response.text and "url" not in body
+    assert provider_row(engine, provider)["url"] == url
+    # Sin corrida aceptada, las sugerencias salen de la fuente vigente: ningún SKU coincide.
+    suggestions = api.get(f"/providers/{provider}/suggestions", params={"store": "T1"}).json()
+    assert suggestions["total"] == 0
+
+
+def test_invalid_new_source_changes_nothing(api, engine, feed_server):
+    provider = create_provider(api, feed_server, "Original")
+    before = provider_row(engine, provider)
+    missing = feed_server["url"].replace("feed.csv", "no-existe.csv")
+    response = api.patch(f"/providers/{provider}", json={"name": "Otro", "url": missing})
+    assert response.status_code == 502
+    assert response.json() == {"detail": "La fuente respondió HTTP 404"}
+    broken = feed_server["path"].with_name("roto.csv")
+    broken.write_text("A;1\n", encoding="utf-8")
+    url = feed_server["url"].replace("feed.csv", "roto.csv")
+    assert api.patch(f"/providers/{provider}", json={"url": url}).status_code == 422
+    assert provider_row(engine, provider) == before
+
+
+def test_edit_keeps_the_accepted_inventory_and_the_guard_protects_it(api, engine, feed_server):
+    provider = linked(api, engine, feed_server, items=3)
+    before = links(engine)
+    url = second_source(feed_server, {"Z001": 5})
+    assert api.patch(f"/providers/{provider}", json={"url": url}).status_code == 200
+    assert links(engine) == before
+    # La fuente nueva no tiene ninguno de los SKU aceptados: la guarda frena la corrida.
+    assert services.ingest(engine, provider)["status"] == "quarantined"
+    assert services.status(engine, "tasks") == []
+    assert links(engine) == before
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"name": None, "url": None},
+        {"name": ""},
+        {"name": "x" * 101},
+        {"url": "ftp://x/f.csv"},
+        {"url": "http://usuario:clave-secreta@x/f.csv"},
+        {"name": "P", "extra": 1},
+    ],
+)
+def test_edit_input_is_validated_and_never_echoed(api, feed_server, body):
+    provider = create_provider(api, feed_server)
+    response = api.patch(f"/providers/{provider}", json=body)
+    assert response.status_code == 422
+    assert "clave-secreta" not in response.text
+
+
+def test_edit_conflicts_and_unknown_providers(api, engine, feed_server):
+    create_provider(api, feed_server, "Tomado")
+    provider = create_provider(api, feed_server, "Libre")
+    taken = api.patch(f"/providers/{provider}", json={"name": "Tomado"})
+    assert taken.status_code == 409
+    assert taken.json() == {"detail": "Ya existe un proveedor con ese nombre"}
+    with ownership(engine, f"provider:{provider}") as owner:
+        assert owner is not None
+        busy = api.patch(f"/providers/{provider}", json={"name": "Otro"})
+    assert busy.status_code == 409 and "ingesta en curso" in busy.json()["detail"]
+    assert provider_row(engine, provider)["name"] == "Libre"
+    api.post(f"/providers/{provider}/disable")
+    assert api.patch(f"/providers/{provider}", json={"name": "Otro"}).status_code == 409
+    assert api.patch("/providers/999", json={"name": "Otro"}).status_code == 404
+    assert api.patch("/providers/0", json={"name": "Otro"}).status_code == 422
+
+
+def test_cli_and_user_session_edit_providers(api, engine, feed_server):
+    from ivostock.usuario import USER_COMMANDS
+
+    provider = create_provider(api, feed_server)
+    ok, result = cli.execute(
+        cli.parser().parse_args(["provider-edit", str(provider), "--name", "Desde CLI"])
+    )
+    assert ok and result["name"] == "Desde CLI" and "url" not in result
+    assert cli.execute(cli.parser().parse_args(["provider-edit", str(provider)])) == (
+        False,
+        {"error": "Indicar un nombre o una URL nuevos"},
+    )
+    assert "provider-edit" in USER_COMMANDS
 
 
 # --- Tiendas (B3) --------------------------------------------------------------------------
