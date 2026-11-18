@@ -31,7 +31,7 @@ docker compose up --build -d --wait
 docker compose ps
 ```
 
-Las tiendas del marketplace simulado se crean aparte, con el inventario configurado en `data/feeds/celesa.csv` (ver [Datos y configuración](#datos-y-configuración)):
+Las tiendas del marketplace simulado se crean aparte, con el inventario configurado en `data/feeds/celesa.csv` (ver [Datos y configuración](#datos-y-configuración)). El inventario real queda fuera de Git; sin él, seguir la [demostración con un feed sintético](#sin-el-inventario-real):
 
 ```sh
 make provision    # o: docker compose run --rm cli python scripts/provisionar_tiendas.py
@@ -157,6 +157,23 @@ docker compose logs --no-color --timestamps publish | grep -E '"link": (1|2),'
 ```
 
 `monitor` muestra llamadas de los últimos sesenta segundos según el cliente y según el simulador, progreso del catálogo, contadores de vínculos (`awaiting_ingest`, `pending`, `failed`, `synchronized`, `changed_from_initial`) e intentos por estado. Importar 127.564 publicaciones lleva unos 22 minutos por tienda (con dos tiendas en importación el worker las alterna y cada una avanza al ritmo de su propia cuota) y publicar 3.600 cantidades, alrededor de una hora: la cuota es la real. El alta del proveedor es una validación; la primera ingesta vence 300 minutos después y `schedule-now` la adelanta por el circuito normal.
+
+### Sin el inventario real
+
+El recorrido es el mismo con un feed generado. Después del [arranque](#arranque), en lugar de `make provision`:
+
+```sh
+docker compose run --rm cli python -m ivostock.generador.feeds --salida data/feeds/demo.csv --skus 10000 --semilla 7
+docker compose run --rm cli python scripts/provisionar_tiendas.py --feed data/feeds/demo.csv
+```
+
+El primer comando escribe `data/feeds/demo.csv` y su manifiesto sintético; el proveedor de ensayo lo sirve de inmediato. El segundo crea T1 y T2 con la mitad de esos SKU cada una. En `usuario>`, el alta del proveedor apunta a ese archivo y el resto de los comandos no cambia:
+
+```text
+provider-add Demo http://provider:8081/demo.csv
+```
+
+Con 10.000 SKU, las dos tiendas importan sus 5.000 publicaciones en menos de un minuto; publicar 3.600 cantidades por tienda sigue llevando alrededor de una hora, porque la cuota es la misma. Las cantidades y los SKU son sintéticos: sirve para recorrer el circuito, no para reproducir las mediciones con datos reales.
 
 ## Recorrido manual paso a paso
 
