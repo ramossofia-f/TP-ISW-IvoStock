@@ -74,12 +74,30 @@ def test_reporte_muestra_veredicto_cambios_y_recursos():
             "fuente": "feed sintético",
             "tiendas": ["T1", "T2"],
             "corridas": [corrida],
-            "maquina": {"sistema": "Linux", "docker": "29", "cpus_docker": 4, "memoria_docker_gib": 8},
-            "recursos": {"publish": {"cpu_promedio_pct": 2.5, "cpu_maximo_pct": 9.0,
-                                     "memoria_maxima_mib": 80.0}},
+            "maquina": {
+                "sistema": "Linux",
+                "docker": "29",
+                "cpus_docker": 4,
+                "memoria_docker_gib": 8,
+            },
+            "recursos": {
+                "publish": {
+                    "muestras": 50,
+                    "cpu_promedio_pct": 2.5,
+                    "cpu_maximo_pct": 9.0,
+                    "memoria_maxima_mib": 80.0,
+                },
+                "init": {
+                    "muestras": 1,
+                    "cpu_promedio_pct": 99.6,
+                    "cpu_maximo_pct": 99.6,
+                    "memoria_maxima_mib": 66.2,
+                },
+            },
         }
     )
     assert "| 1 | T1 | 1000 | 16,0 | 17,0 | 0 | 0 | cumple |" in texto
     assert "| 1 | T2 | 1000 | 16,0 | 17,0 | 1 | 0 | no cumple: 1 pendientes |" in texto
     assert "| 1 | 10000 | 2000 | 17,0 |" in texto
     assert "| `publish` | 2,5 | 9,0 | 80,0 |" in texto
+    assert "`init` |" not in texto

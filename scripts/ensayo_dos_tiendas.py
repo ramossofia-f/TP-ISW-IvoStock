@@ -31,6 +31,7 @@ from urllib.parse import urlsplit, urlunsplit
 P95_MAXIMO = 30 * 60
 P99_MAXIMO = 60 * 60
 VINCULOS_POR_TIENDA = 1000
+MUESTRAS_MINIMAS = 3
 ESPERA_MAXIMA = timedelta(minutes=90)
 
 
@@ -172,6 +173,10 @@ def drenada(engine, tiendas, desde):
 # --- Reporte ---------------------------------------------------------------------------------
 
 
+def decimal(valor):
+    return str(valor).replace(".", ",")
+
+
 def minutos(segundos):
     return "—" if segundos is None else f"{segundos / 60:.1f}".replace(".", ",")
 
@@ -223,17 +228,19 @@ def reporte(datos):
         "## Recursos",
         "",
         f"{datos['maquina']['sistema']}, Docker {datos['maquina']['docker']} con "
-        f"{datos['maquina']['cpus_docker']} CPU y {datos['maquina']['memoria_docker_gib']} GiB "
-        "compartidos entre todos los servicios, sin límites por contenedor. Muestras de "
-        "`docker stats` cada 30 segundos durante todo el ensayo.",
+        f"{datos['maquina']['cpus_docker']} CPU y "
+        f"{str(datos['maquina']['memoria_docker_gib']).replace('.', ',')} GiB compartidos entre "
+        "todos los servicios, sin límites por contenedor. Muestras de `docker stats` cada 30 "
+        "segundos durante todo el ensayo; se omiten los contenedores de un solo uso (`init` y los "
+        f"de `docker compose run`), con menos de {MUESTRAS_MINIMAS} muestras.",
         "",
         "| Servicio | CPU promedio (%) | CPU máximo (%) | Memoria máxima (MiB) |",
         "|---|---:|---:|---:|",
         *(
-            f"| `{s}` | {r['cpu_promedio_pct']} | {r['cpu_maximo_pct']} | {r['memoria_maxima_mib']} |".replace(
-                ".", ","
-            )
+            f"| `{s}` | {decimal(r['cpu_promedio_pct'])} | {decimal(r['cpu_maximo_pct'])} "
+            f"| {decimal(r['memoria_maxima_mib'])} |"
             for s, r in datos["recursos"].items()
+            if r["muestras"] >= MUESTRAS_MINIMAS
         ),
         "",
     ]
@@ -304,7 +311,19 @@ def main(argv=None):
     )
     ap.add_argument("--base", type=Path, help="Inventario real preparado; sin él, feed sintético")
     ap.add_argument("--tiendas", nargs=2, default=["T1", "T2"])
+    ap.add_argument(
+        "--reporte-desde",
+        type=Path,
+        help="Regenerar el resumen desde una evidencia JSON, sin ensayar",
+    )
     args = ap.parse_args(argv)
+    if args.reporte_desde:
+        datos = json.loads(args.reporte_desde.read_text(encoding="utf-8"))
+        sufijo = "CELESA" if "real" in datos["fuente"] else "SINTETICO"
+        Path(f"docs/entregas/ENSAYO-DOS-TIENDAS-{sufijo}.md").write_text(
+            reporte(datos), encoding="utf-8"
+        )
+        return
     entorno()
     from ivostock import services
     from ivostock.db import database
@@ -326,7 +345,7 @@ def main(argv=None):
         )["id"]
         esperar(
             lambda: all(
-                s["import_finished_at"]
+                s["catalog_imported"]
                 for s in services.list_stores(engine)
                 if s["id"] in args.tiendas
             ),

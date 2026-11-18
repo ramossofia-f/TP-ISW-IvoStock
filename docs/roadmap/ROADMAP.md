@@ -75,8 +75,17 @@ observador es otro microservicio de sólo lectura, sin histórico propio ni aler
 de efecto externo se calculan por tienda, separados de disponibilidad. Diseño y comparación con
 UptimeRobot en el [ADR-0017](../adr/0017-metricas-y-observador.md).
 
-La campaña real de 24 horas y las mediciones RNF-02/RNF-15 quedan pendientes. La instrumentación
-no se declara como evidencia de haber cumplido los umbrales. El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
+La campaña real de 24 horas queda pendiente. La instrumentación no se declara como evidencia de
+haber cumplido los umbrales.
+
+### Ensayo de dos tiendas (RNF-02 y RNF-15)
+
+`scripts/ensayo_dos_tiendas.py` mide dos tiendas sanas y sin cola previa con 1.000 vínculos cada
+una, con los workers reales y la cuota real. Con el feed sintético, ambas cumplen RNF-02: en la
+corrida de carga máxima (1.000 cambios por tienda) el p95 fue de 16,0 minutos y el p99 de 17,0, sin
+pendientes ni duraciones desconocidas. Resultados, cambios por corrida y recursos en el
+[reporte del ensayo](../entregas/ENSAYO-DOS-TIENDAS-SINTETICO.md). Falta repetirlo con el
+inventario real de Celesa. El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
 detalla las comprobaciones ejecutadas y las limitaciones.
 
 ## Preparación de la presentación E2
