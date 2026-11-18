@@ -605,6 +605,7 @@ OPERATIONS = {
     ("get", "/auth/me"),
     ("get", "/providers"),
     ("post", "/providers"),
+    ("patch", "/providers/{provider_id}"),
     ("post", "/providers/{provider_id}/disable"),
     ("get", "/providers/{provider_id}/suggestions"),
     ("post", "/providers/{provider_id}/approve"),
@@ -651,7 +652,8 @@ def test_openapi_documents_exactly_what_is_implemented(engine):
         if (method, path) not in public:
             assert operation.get("security") == [{"HTTPBearer": []}], (method, path)
             assert "401" in operation["responses"] and "500" in operation["responses"]
-    assert "url" not in schema["components"]["schemas"]["ProviderOut"]["properties"]
+    for name in ("ProviderOut", "ProviderUpdated"):
+        assert "url" not in schema["components"]["schemas"][name]["properties"]
 
 
 def test_validation_errors_do_not_echo_what_the_client_sent(engine, operators):
