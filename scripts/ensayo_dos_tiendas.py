@@ -32,6 +32,8 @@ P95_MAXIMO = 30 * 60
 P99_MAXIMO = 60 * 60
 VINCULOS_POR_TIENDA = 1000
 MUESTRAS_MINIMAS = 3
+# Un equipo suspendido detiene a Docker y a las publicaciones: el ensayo deja de ser válido.
+SUSPENSION_MINIMA = 60
 ESPERA_MAXIMA = timedelta(minutes=90)
 
 
@@ -79,16 +81,35 @@ def esperar(condicion, limite, descripcion, cada=10):
 # --- Recursos --------------------------------------------------------------------------------
 
 
+def suspension(antes, despues):
+    """Segundos suspendidos entre dos lecturas `(reloj de pared, reloj monotónico)`.
+
+    El reloj monotónico no avanza mientras el equipo duerme (macOS y Linux); el de pared sí.
+    """
+    perdidos = (despues[0] - antes[0]) - (despues[1] - antes[1])
+    return perdidos if perdidos >= SUSPENSION_MINIMA else 0
+
+
 class Recursos(threading.Thread):
-    """Muestrea `docker stats` del proyecto mientras dura el ensayo (RNF-15)."""
+    """Muestrea `docker stats` del proyecto mientras dura el ensayo (RNF-15).
+
+    También detecta suspensiones del equipo, que invalidan las mediciones de tiempo.
+    """
 
     def __init__(self, cada=30):
         super().__init__(daemon=True)
         self.cada, self.muestras, self.detener = cada, {}, threading.Event()
+        self.suspensiones = []
         self.proyecto = os.environ.get("COMPOSE_PROJECT_NAME") or Path.cwd().name
 
     def run(self):
+        anterior = (time.time(), time.monotonic())
         while not self.detener.is_set():
+            actual = (time.time(), time.monotonic())
+            if perdidos := suspension(anterior, actual):
+                desde = datetime.fromtimestamp(anterior[0], UTC).isoformat()
+                self.suspensiones.append({"desde": desde, "segundos": round(perdidos)})
+            anterior = actual
             salida = subprocess.run(
                 ["docker", "stats", "--no-stream", "--format", "{{json .}}"],
                 capture_output=True,
@@ -179,6 +200,16 @@ def decimal(valor):
 
 def minutos(segundos):
     return "—" if segundos is None else f"{segundos / 60:.1f}".replace(".", ",")
+
+
+def invalido(datos, evidencia):
+    minutos_dormido = sum(s["segundos"] for s in datos["suspensiones"]) / 60
+    return (
+        f"Ensayo inválido: el equipo estuvo suspendido {minutos_dormido:.0f} minutos "
+        f"({len(datos['suspensiones'])} veces) y las duraciones incluyen ese tiempo. "
+        f"No se escribe el reporte; detalle en {evidencia}. Repetir con el equipo enchufado y "
+        "sin suspensión, por ejemplo con `caffeinate -i` en macOS."
+    )
 
 
 def reporte(datos):
@@ -319,6 +350,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.reporte_desde:
         datos = json.loads(args.reporte_desde.read_text(encoding="utf-8"))
+        if datos.get("suspensiones"):
+            raise SystemExit(invalido(datos, args.reporte_desde))
         sufijo = "CELESA" if "real" in datos["fuente"] else "SINTETICO"
         Path(f"docs/entregas/ENSAYO-DOS-TIENDAS-{sufijo}.md").write_text(
             reporte(datos), encoding="utf-8"
@@ -369,12 +402,16 @@ def main(argv=None):
         "corridas": corridas,
         "maquina": maquina(),
         "recursos": recursos.resumen(),
+        "suspensiones": recursos.suspensiones,
     }
     evidencia = Path("data/evidencia") / f"ensayo-dos-tiendas-{identificador}.json"
     evidencia.parent.mkdir(parents=True, exist_ok=True)
     evidencia.write_text(
         json.dumps(datos, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
     )
+    if datos["suspensiones"]:
+        # Las duraciones incluyen el tiempo dormido: no se versiona un resultado inválido.
+        raise SystemExit(invalido(datos, evidencia))
     sufijo = "CELESA" if args.base else "SINTETICO"
     Path(f"docs/entregas/ENSAYO-DOS-TIENDAS-{sufijo}.md").write_text(
         reporte(datos), encoding="utf-8"

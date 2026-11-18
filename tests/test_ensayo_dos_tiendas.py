@@ -101,3 +101,30 @@ def test_reporte_muestra_veredicto_cambios_y_recursos():
     assert "| 1 | 10000 | 2000 | 17,0 |" in texto
     assert "| `publish` | 2,5 | 9,0 | 80,0 |" in texto
     assert "`init` |" not in texto
+
+
+@pytest.mark.parametrize(
+    "antes,despues,esperado",
+    [
+        ((0, 0), (30, 30), 0),
+        ((0, 0), (85, 30), 0),
+        ((0, 0), (990, 30), 960),
+    ],
+)
+def test_detecta_suspension_por_diferencia_de_relojes(antes, despues, esperado):
+    assert ensayo.suspension(antes, despues) == esperado
+
+
+def test_evidencia_con_suspension_no_genera_reporte(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.chdir(tmp_path)
+    evidencia = tmp_path / "evidencia.json"
+    evidencia.write_text(
+        json.dumps({"fuente": "inventario real", "suspensiones": [{"segundos": 960}]}),
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit) as salida:
+        ensayo.main(["--reporte-desde", str(evidencia)])
+    assert "suspendido 16 minutos" in str(salida.value)
+    assert not (tmp_path / "docs").exists()
