@@ -59,3 +59,15 @@ def test_cli_registra_semilla_y_hash_sin_inventario_en_manifiesto(tmp_path):
 def test_fracciones_invalidas_se_rechazan(fraction):
     with pytest.raises(ValueError):
         Parametros(truncar=fraction)
+
+
+def test_bajas_quitan_sku_dispersos_sin_alterar_escenarios_previos():
+    assert hashlib.sha256(generar(Parametros(semilla=7, skus=2000)).encode()).hexdigest() == (
+        "5096c9b1d63bd28beb8855cb0f7299953dea04766178b559887173992bfc52e8"
+    )
+    completo = normalizar(generar(Parametros(skus=1000)).encode()).stock
+    con_bajas = normalizar(generar(Parametros(skus=1000, bajas=0.05)).encode()).stock
+    ausentes = [sku for sku in completo if sku not in con_bajas]
+    assert len(ausentes) == 50
+    assert set(ausentes) != set(list(completo)[-50:])
+    assert all(con_bajas[sku] == completo[sku] for sku in con_bajas)

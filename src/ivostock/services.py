@@ -376,7 +376,10 @@ def list_stores(engine):
 def status(engine, category="links", store=None, summary=False, limit=None):
     queries = {
         "links": LINKS,
-        "providers": "SELECT id,name,status,active,next_run_at,last_accepted_run,last_error FROM providers ORDER BY id",
+        "providers": "SELECT p.id,p.name,p.status,p.active,p.next_run_at,p.last_accepted_run,"
+        "p.last_error,(SELECT max(r.id) FROM runs r WHERE r.provider_id=p.id AND p.active "
+        "AND r.status='quarantined' AND r.id>COALESCE(p.last_accepted_run,0)) "
+        "AS quarantine_run_id FROM providers p ORDER BY p.id",
         "stores": "SELECT id,status,last_error,blocked_until,import_offset AS processed,import_total AS total,import_finished_at FROM stores ORDER BY id",
         "runs": "SELECT id,provider_id,status,snapshot_key,metrics,error,replay_of,started_at,finished_at FROM runs ORDER BY id",
         "quarantines": "SELECT * FROM runs WHERE status='quarantined' ORDER BY id",

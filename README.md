@@ -123,7 +123,59 @@ uv run python -m ivostock.generador.feeds --salida data/feeds/demo.csv --skus 10
 uv run python -m ivostock.generador.feeds --base data/feeds/demo.csv --salida data/feeds/truncado.csv --truncar 0.3 --semilla 7
 ```
 
-También permite `--ceros`, `--corruptas` y `--deriva`, como fracciones entre cero y uno. La salida conserva el encabezado fijo `SKU;stock`; los archivos locales son entradas de preparación y generación, y los proveedores se consultan siempre por HTTP.
+También permite `--ceros`, `--corruptas`, `--deriva` y `--bajas` (SKU dispersos que dejan de figurar), como fracciones entre cero y uno. La salida conserva el encabezado fijo `SKU;stock`; los archivos locales son entradas de preparación y generación, y los proveedores se consultan siempre por HTTP.
+
+### Detector global de normalidad (ML)
+
+El componente implementado ([ADR-0016 propuesto](docs/adr/0016-normalidad-global-y-aprendizaje-durable.md)) aprende
+únicamente de corridas aceptadas: OneClassSVM RBF, proveedor one-hot y siete estadísticas ya
+calculadas por ingesta. `ml` sirve la inferencia en Python puro; `ml-train` instala sklearn y
+reentrena en segundo plano. `make up` inicia ambos, sin esperar a reunir el historial.
+
+La guarda fija es obligatoria: p>0,5 pone en cuarentena sin consultar ML. Si pasa, el modelo
+puede agregar cuarentenas una vez que su versión incorpore diez aceptados del proveedor.
+Cuarentena = guarda o ML; ningún modelo, aprobación ni replay omite la guarda. Durante el
+calentamiento o si ML no responde en un segundo total, decide sólo la guarda. Aceptar
+deja una observación durable, incluso cuando no se pudo consultar al modelo. El
+entrenamiento no demora la publicación. Una caída conserva el modelo anterior y los pendientes.
+Al recuperar se procesa cada observación una vez; una cuarentena nunca entrena.
+
+La ventana contiene hasta 200 aceptados procesados por proveedor, con semivida de siete días.
+Configurar `ML_MIN_RUNS`, `ML_HISTORY_PER_PROVIDER`, `ML_HALF_LIFE_DAYS`, `ML_NU` y
+`ML_RETRY_SECONDS` antes de entrenar una nueva versión. `configurar.py` agrega `ML_URL` y el
+secreto `ML_TOKEN` sin sobrescribir configuración existente. No hay backfill automático.
+
+Diagnóstico de backend y reproducción (usar la versión que devuelve `ml-report`):
+
+```sh
+docker compose run --rm cli ivostock ml-report
+docker compose run --rm --build ml-train ivostock ml-reproduce VERSION --output data/ml/reproduced.json
+```
+
+La reproducción comprueba el hash de la versión, no la activa y necesita las mismas versiones de
+bibliotecas registradas. Si se quiere conservar el archivo en el host, agregar
+`-v "./data:/work/data"` a `docker compose run`. Las versiones y observaciones residen en PostgreSQL
+y forman parte de su respaldo; no se escriben en Git. La app sólo agrega un aviso de cuarentena,
+sin puntajes ni versiones. El diagnóstico y la distribución de puntajes quedan en `ml-report`.
+
+El observador externo usa `http://localhost:8002/health/live` (proceso y esquema), `/health`
+(inferencia lista; 503 durante el calentamiento) y `/health/training` (heartbeat reciente del
+entrenador). `ML_HOST_PORT` cambia el puerto local. Compose comprueba sólo `/health/live` para que
+el arranque pueda terminar antes del calentamiento. El motor por respaldo no cuenta como uptime
+de ML. `POST /classify` es interno y requiere `ML_TOKEN`; no recibe CSV, URLs ni credenciales.
+
+Un aceptado se asume sano: esto puede reforzar errores y rechazar novedades legítimas. Alteraciones
+de cantidades positivas que no cambien las siete estadísticas quedan fuera del alcance. La
+evaluación sintética del diseño vigente se reproduce con
+`uv run --group ml python scripts/ml_evaluar_normalidad.py`; el [reporte](docs/entregas/ML-NORMALIDAD-EVALUACION.md)
+declara falsas cuarentenas y detecciones sobre escenarios reservados. La
+[evaluación anterior](docs/entregas/ML-EVALUACION.md), `scripts/ml_entrenar.py` y su `modelo.json`
+pertenecen al experimento binario histórico y no activan ni evalúan el detector implementado.
+El ADR-0016 queda propuesto hasta que lo revisen los tres integrantes; la calidad del detector
+sigue bajo revisión y no se acredita una mejora respecto de la logística con ensayos distintos.
+
+El [registro de verificación](docs/entregas/ML-NORMALIDAD-VERIFICACION.md) separa las comprobaciones
+de modelo, circuito, recuperación, privacidad y avisos de los ensayos todavía no realizados.
 
 ## Recorrido de demostración
 
@@ -207,4 +259,4 @@ La integración crea y limpia exclusivamente `ivostock_test` y usa `snapshots-te
 
 El ensayo real y la interrupción del servicio PostgreSQL se ejecutan con `uv run python scripts/evaluar_poc.py --source "RUTA_AL_ORIGINAL" --captured-at "FECHA_DEL_ARCHIVO"`. Ese ensayo detiene temporalmente API y workers del proyecto, conserva los volúmenes y deja un reporte en `data/evidencia/poc.json`. Usa un proveedor y una tienda de ensayo identificados por ejecución.
 
-El [registro de E2](docs/entregas/ENTREGA-2.md) separa resultados locales comprobados de ensayos pendientes. Las pruebas largas de disponibilidad, capacidad de interfaz y dos tiendas corresponden al MVP. ML está pendiente de definición.
+El [registro de E2](docs/entregas/ENTREGA-2.md) separa resultados históricos de ensayos pendientes. Las pruebas largas de disponibilidad, capacidad de interfaz y dos tiendas corresponden al MVP. El diseño de ML implementado para revisión está en el ADR-0016 propuesto.

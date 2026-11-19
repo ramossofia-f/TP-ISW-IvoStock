@@ -8,7 +8,7 @@ Los proveedores publican un inventario completo mediante HTTP con encabezado `SK
 
 El proyecto utiliza datos reales archivados de Celesa y un marketplace simulado con publicaciones preparadas, límite de llamadas y errores controlables. El POC se opera por línea de comandos. El MVP incorpora una aplicación autenticada para configurar y observar dos tiendas de 1.000 vínculos cada una. Agregar la segunda tienda reutiliza el mismo inventario, sin duplicar su ingesta.
 
-La ingeniería se concentra en persistencia, consistencia eventual, idempotencia, recuperación, límites de una API y observabilidad. Se medirá disponibilidad funcional durante veinticuatro horas. El componente de ML del MVP está pendiente de definición.
+La ingeniería se concentra en persistencia, consistencia eventual, idempotencia, recuperación, límites de una API y observabilidad. Se medirá disponibilidad funcional durante veinticuatro horas. ML aprende la normalidad de los feeds aceptados con un modelo global, proveedor codificado y estadísticas de corrida; sólo agrega cuarentenas a la guarda fija obligatoria, que decide sola durante el arranque o una caída. El aprendizaje queda pendiente de forma durable y se recupera sin bloquear el motor. El operador recibe avisos de cuarentena; las métricas de ML quedan para operación interna. La implementación de normalidad espera revisión conjunta del ADR-0016 propuesto.
 
 El sistema ofrece la cantidad completa en cada tienda; la sobreventa por ventas simultáneas es un riesgo aceptado. Las fuentes degradadas conservan su último stock publicado hasta que se recuperen o el operador decida darlas de baja.
 

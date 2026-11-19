@@ -18,7 +18,11 @@ El [PRD](docs/prd/PRD.md) define el producto; el [SRD](docs/srd/SRD.md), su dise
 - Los endpoints de control del simulador son herramientas de ensayo, separados de su API de negocio.
 - Agregar decisiones estructurales como ADRs breves con alternativas y consecuencias.
 - Mantener alcance, comandos y resultados medidos coherentes. No declarar pruebas que no se ejecutaron.
-- ML está pendiente de definición para el MVP.
+- ML implementa un detector global de normalidad (ADR-0016 propuesto). La guarda p>0,5 es
+  obligatoria: se evalúa primero; ML sólo suma cuarentenas, nunca las libera. Sólo los aceptados
+  generan observaciones durables; publicar un modelo y confirmar su aprendizaje es atómico.
+  El servicio de inferencia y el entrenador son independientes; las métricas de ML no llegan a
+  la API del operador. El experimento del ADR-0015 se conserva únicamente como histórico.
 
 ## Comprobación
 

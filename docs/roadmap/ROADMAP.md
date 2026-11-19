@@ -45,7 +45,29 @@ El referente coordina el tramo, abre su pull request y responde por su criterio 
 
 Del tramo siguiente ya están el tablero de corridas y la búsqueda de sugerencias por SKU; sigue pendiente modificar un proveedor (RF-04).
 
-Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas. El componente de ML requiere una decisión específica antes de implementarlo.
+### Plan del tramo 11/11–17/11 (ML)
+
+El [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md) implementa un
+modelo global de normalidad que aprende de aceptados y reentrena mediante outbox. Espera revisión
+de los tres integrantes para reemplazar el modelo binario del [ADR-0015](../adr/0015-detector-de-feeds-anomalos.md).
+Se mantienen la guarda obligatoria y su rol monótono: cuarentena si guarda o ML, sin omisiones.
+Se conserva el reparto de contribuciones; las cifras del modelo anterior son evidencia histórica.
+
+| Parte | Resultado verificable | Autor | Revisa |
+|---|---|---|---|
+| Experimento anterior: datos y entrenamiento | Generador, variables, conjunto reproducible, modelo binario y evaluación conservados como histórico | Sofía Ramos | Francisco Ortega |
+| Implementación propuesta: normalidad e integración | Modelo global OneClassSVM adicional a la guarda, servicio privado, aprendizaje durable, versiones reproducibles, diagnóstico interno y aviso de cuarentena; ADR pendiente de revisión conjunta | Francisco Ortega | Sofía Ramos |
+
+Implementación verificada localmente en el [registro del detector](../entregas/ML-NORMALIDAD-VERIFICACION.md):
+300 pruebas Python aprobadas en Docker tras restablecer la guarda obligatoria y aviso comprobado
+con Node.js en el host. La
+[evaluación sintética vigente](../entregas/ML-NORMALIDAD-EVALUACION.md) declara detecciones y falsas
+cuarentenas. Pendientes integración en la rama de entrega, revisión del equipo y CI remoto.
+
+Para el video E3 también queda pendiente mostrar la [activación tras diez aceptados del proveedor](../entregas/ENTREGA-3-ML-PENDIENTES.md):
+si todavía no hay suficientes runs, el modelo operativo se entrega al procesar el feed n.º 10 aceptado.
+
+Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas.
 
 ## Preparación de la presentación E2
 
