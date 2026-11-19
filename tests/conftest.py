@@ -87,7 +87,7 @@ def engine(infrastructure):
     with db.begin() as conn:
         execute(
             conn,
-            "TRUNCATE ml_observations,ml_state,ml_models,provider_preview,providers,stores,runs,stock,catalog,links,comparison_events,tasks,attempts,dead_letters,market_calls,worker_heartbeats,sim_stores,sim_items,sim_calls,sim_faults,sessions,users,login_failures RESTART IDENTITY CASCADE",
+            "TRUNCATE metric_samples,ml_observations,ml_state,ml_models,provider_preview,providers,stores,runs,stock,catalog,links,comparison_events,tasks,attempts,dead_letters,market_calls,worker_heartbeats,sim_stores,sim_items,sim_calls,sim_faults,sessions,users,login_failures RESTART IDENTITY CASCADE",
         )
         execute(conn, "INSERT INTO ml_state(id) VALUES(1)")
     return db

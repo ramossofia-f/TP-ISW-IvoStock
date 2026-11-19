@@ -46,7 +46,7 @@ const fmtPercent = (fraction) => `${fmtNumber(fraction * 100)} %`;
 function fmtDate(iso) {
     if (!iso) return '—';
     const date = new Date(iso);
-    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('es-AR');
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('es-AR', { hour12: false });
 }
 
 function shorten(text, max = 120) {
@@ -211,7 +211,7 @@ function stopPolling() {
     state.poll = null;
 }
 
-function startPolling(task) {
+function startPolling(task, interval = POLL_MS) {
     stopPolling();
     state.poll = setInterval(async () => {
         if (state.pollBusy) return;
@@ -223,7 +223,7 @@ function startPolling(task) {
         } finally {
             state.pollBusy = false;
         }
-    }, POLL_MS);
+    }, interval);
 }
 
 function showView(name) {
@@ -242,6 +242,7 @@ const LOADERS = {
     vinculacion: () => loadLinkingFilters(),
     vinculos: () => loadLinksView(),
     corridas: () => loadRunsView(),
+    monitoreo: () => loadMetricsView(),
 };
 
 function switchView(name) {
@@ -889,6 +890,61 @@ async function loadRuns(offset, quiet = false) {
     $('current-runs-page').textContent = String(Math.floor(offset / RUNS_PAGE_SIZE) + 1);
     $('btn-prev-runs').disabled = offset === 0;
     $('btn-next-runs').disabled = page.next_offset === null;
+}
+
+// --- Monitoreo: datos numéricos, sin alertas ni evaluación visual de umbrales ----------------
+
+async function loadMetricsView() {
+    await loadMetrics();
+    startPolling(() => loadMetrics(true), 60000);
+}
+
+async function loadMetrics(quiet = false) {
+    const [current, summary] = await Promise.all([
+        api('GET', '/metrics/current', { quiet }),
+        api('GET', '/metrics/summary', { quiet }),
+    ]);
+    $('metricas-muestra').textContent =
+        `Última muestra: ${fmtDate(current.minute)} · Antigüedad: ${fmtNumber(current.age_seconds)} s`;
+    $('metricas-periodo').textContent =
+        `${fmtDate(summary.start)} a ${fmtDate(summary.end)} · ` +
+        `${fmtNumber(summary.recorded_samples)} muestras de ${fmtNumber(summary.expected_samples)} · ` +
+        `${fmtNumber(summary.missing_samples)} faltantes`;
+    fillBody($('table-disponibilidad'), Object.entries(summary.availability).map(([name, value]) =>
+        h('tr', {}, td(name), tdNum(value.successful_samples), tdNum(value.availability_percent)),
+    ), 'Sin muestras.');
+    const minutes = (seconds) => seconds === null ? null : seconds / 60;
+    fillBody($('table-publicacion'), summary.publication.map((store) =>
+        h('tr', {}, td(store.store_id), tdNum(store.samples),
+            tdNum(minutes(store.p95_seconds)), tdNum(minutes(store.p99_seconds)),
+            tdNum(store.pending), tdNum(store.unknown_duration)),
+    ), 'Sin tiendas.');
+    fillBody($('table-heartbeats'), Object.entries(current.workers).map(([name, worker]) =>
+        h('tr', {}, td(name), tdNum(Number(worker.available)),
+            td(fmtDate(worker.last_seen_at)), tdNum(worker.age_seconds)),
+    ), 'Sin heartbeats.');
+    renderMLMetrics(current);
+}
+
+function renderMLMetrics(current) {
+    const ml = current.state?.ml || {};
+    const components = current.state?.components || {};
+    const model = ml.active_model;
+    const flag = (value) => value === undefined || value === null ? null : Number(value);
+    fillBody($('table-ml-estado'), [
+        h('tr', {}, td('Configurado (1/0)'), tdNum(flag(ml.configured))),
+        h('tr', {}, td('Servicio activo (1/0)'), tdNum(flag(components.ml?.available))),
+        h('tr', {}, td('Inferencia lista (1/0)'), tdNum(flag(components.ml_ready?.available))),
+        h('tr', {}, td('Entrenador activo (1/0)'), tdNum(flag(current.workers['ml-train']?.available))),
+        h('tr', {}, td('Versión activa'), h('td', { title: model?.version || null }, model?.version ? shorten(model.version, 20) : '—')),
+        h('tr', {}, td('Mínimo de observaciones por proveedor'), tdNum(model?.min_runs)),
+        h('tr', {}, td('Observaciones aceptadas'), tdNum(ml.learning?.accepted_observations)),
+        h('tr', {}, td('Aprendizajes pendientes'), tdNum(ml.learning?.pending)),
+        h('tr', {}, td('Último entrenamiento'), td(fmtDate(ml.learning?.last_training))),
+    ], 'Sin muestras.');
+    fillBody($('table-ml-proveedores'), Object.entries(model?.counts || {}).map(([provider, count]) =>
+        h('tr', {}, td(provider), tdNum(count)),
+    ), 'Sin observaciones incorporadas a una versión.');
 }
 
 // --- Inicio -------------------------------------------------------------------------------

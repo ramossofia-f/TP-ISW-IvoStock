@@ -24,6 +24,10 @@ flowchart LR
     P -->|HTTP y cuota| SIM
     SIM --> DB[(Tablas del simulador)]
     API[API] --> PG
+    MET[Métricas internas / muestra por minuto] --> PG
+    MET -->|health HTTP| API
+    OBS[Observador de sólo lectura] -->|GET autenticado| MET
+    OBS -->|health HTTP| API
 ```
 
 Python 3.12, FastAPI, SQLAlchemy, Alembic, psycopg, httpx y boto3. Las dependencias se bloquean en `uv.lock`. La API de operadores y los workers comparten PostgreSQL; sus caídas son independientes mientras PostgreSQL esté disponible. Ingesta, comparación y publicación se integran mediante eventos; la ingesta sí consulta el servicio ML por HTTP con plazo y respaldo. El simulador persiste en tablas propias y el motor sólo lo consulta por HTTP.
@@ -46,6 +50,9 @@ La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostoc
 | attempts, dead_letters | Evidencia de cada envío y fallas que requieren revisión |
 | market_calls | Ventana móvil de permisos por tienda |
 | worker_heartbeats | Actividad reciente de cada proceso |
+| metric_samples | Estado operativo por minuto UTC; retención de siete días |
+| publication_measurements | Origen, confirmación y efecto externo por vínculo/revisión; pendientes y reemplazos identificados |
+| sim_publication_effects | Primer efecto por tienda/publicación/`X-Ivo-Work`, conservado al repetir un envío |
 | sim_* | Catálogo, cantidades, cuota y fallas del simulador |
 
 Alembic instala el esquema. Un índice único parcial sobre publicación/tienda impide más de un vínculo no desactivado. Las cantidades son enteros entre 0 y 2.147.483.647. Los SKU son cadenas. Los snapshots usan claves SHA-256 y escritura condicional: los bytes de una clave existente no se reemplazan. Tareas e intentos conservan la referencia de corrida; un corte o una reanudación manual puede tener referencia nula y se identifica por vínculo y revisión.
@@ -86,7 +93,9 @@ Aceptar conserva en una transacción inventario, corrida, evento y `ml_observati
 cuarentena no conserva observación ni genera evento. `runs.metrics.ml` guarda decisión, origen,
 versión, puntaje, `guard_accepted` y motivo del respaldo. Si rechaza la guarda, el origen es
 `rules`, `guard_accepted=false` y versión, puntaje y motivo del respaldo son nulos: no hubo
-consulta ML ni se presume una caída. `RunOut` excluye ese objeto: no llega a la app del operador.
+consulta ML ni se presume una caída. `RunOut` excluye ese objeto de los recorridos de negocio.
+El diagnóstico técnico se consulta por backend y por Monitoreo, con la excepción de permisos
+del TP documentada más abajo.
 La aceptación confirmada es el único origen de observaciones nuevas. No hay backfill automático.
 
 El worker `ml-train` usa un advisory lock global. Toma el pendiente más antiguo y reentrena con
@@ -112,7 +121,7 @@ versión activa y mantiene la referencia a la corrida original.
 | `GET /health/training` | Heartbeat del entrenador menor a treinta segundos; no confundir con disponibilidad de inferencia |
 
 Las sondas públicas sólo entregan estado genérico. Swagger/ReDoc/OpenAPI están desactivados en el
-servicio ML. El observador registra por separado proceso, inferencia y entrenamiento: que el motor
+servicio ML. El estado interno y el observador distinguen proceso, inferencia y entrenamiento: que el motor
 funcione por respaldo no acredita uptime de ML. `ml-report` muestra versión, decisiones y motivos
 de respaldo, distribución de los últimos mil puntajes, pendientes, última actualización y errores
 del entrenador. No se atribuye precisión en línea sin etiquetas independientes.
@@ -159,13 +168,14 @@ La API de la aplicación (`ivostock.main`, puerto 8000) expone la configuración
 | `GET /links`, `GET /links/summary`, `POST /links/{id}/off`, `POST /links/{id}/resume` | Vínculos paginados y contadores; apagado con cero confirmado antes de desactivar; reanudación de un vínculo fallido |
 | `GET /runs`, `GET /runs/summary` | Corridas de ingesta, de sólo lectura, y su conteo por estado |
 | `GET /health` | Disponibilidad de proceso y esquema, sin datos de negocio |
+| `GET /metrics/current`, `GET /metrics/history`, `GET /metrics/summary` | Último estado con antigüedad y heartbeats actuales; serie del período; disponibilidad y percentiles por tienda. Sólo lectura y autenticados; router compartido con el servicio de métricas |
 
 El contrato del proveedor es RF-11. La preparación agrega exactamente los bytes `SKU;stock\n` al original, conserva procedencia y hashes y sirve únicamente el directorio de derivados. Las credenciales se configuran por entorno; las URLs no deben incluir secretos.
 
 | Endpoint del simulador | Contrato |
 |---|---|
 | `GET /stores/{store}/items` | Bearer preconfigurado; `limit` entero de 1 a 100 (por defecto 100) y `offset` entero desde 0 (por defecto 0). Ordena por ID de publicación; devuelve `items`, `next_offset` (`null` al terminar) y `total` |
-| `PUT /stores/{store}/items/{item}/stock` | Bearer; JSON `available_quantity` entero no negativo; cantidad absoluta |
+| `PUT /stores/{store}/items/{item}/stock` | Bearer; JSON `available_quantity` entero no negativo; cantidad absoluta. `X-Ivo-Work` opcional identifica vínculo:revisión para devolver su primer `effect_at` aunque se repita el envío |
 | `POST /admin/seed` | Credencial de control; crea catálogo una vez por tienda. Lo usan `scripts/provisionar_tiendas.py` (muestras del 50 % de los SKU distintos del inventario, con un núcleo común a todas las tiendas, y stock cero) y `seed`; la aplicación no |
 | `POST /admin/fault` | Credencial de control; estado HTTP e intentos afectados, por tienda o publicación |
 | `GET /admin/stores/{store}` | Observación externa de ensayos, sin consumir cuota de negocio |
@@ -188,6 +198,69 @@ La campaña de diez cierres mata procesos externos después de observar un marca
 
 Para RNF-01 se mide desde descarga hasta comparación confirmada con el feed real completo. Para RNF-02 se registra aceptación/corte y efecto en el observador del simulador, con servicios sanos y sin cola previa; cada ensayo informa cantidad y frecuencia de cambios, lecturas y reintentos. No existe un cupo de deltas.
 
-Para RNF-07 se observa durante veinticuatro horas, cada sesenta segundos y por separado: página y consulta autenticada en hasta cinco segundos; cambio pequeño en feed de control, ingesta por CLI y efecto externo en hasta sesenta segundos. La carga es controlada. Los disparos de sonda no cambian la programación de cinco horas, que se prueba por separado. Fallos, sondas faltantes, timeouts y reinicios propios cuentan como indisponibilidad. Las fallas externas se registran aparte. La campaña de cierres se realiza fuera de esa ventana.
+Para RNF-07 el servicio interno consulta cada minuto los health HTTP de API, simulador y proveedor
+con timeout de cinco segundos, y lee los heartbeats existentes de ingesta, comparación,
+publicación y catálogo. Conserva una muestra por minuto UTC en `metric_samples`, durante siete
+días. No se alteran feeds, programación de ingesta, cola ni stock para obtener una muestra.
+El motor está disponible si los cuatro heartbeats están vigentes; se mantiene la tolerancia de
+660 segundos del health existente por el tiempo máximo de ingesta. La disponibilidad histórica
+de interfaz/API representa el health de su servicio, no una prueba automatizada del navegador.
+La comprobación de la interfaz visual sigue siendo un recorrido separado.
+
+La ventana se expresa con `start` inclusivo y `end` exclusivo, ambos minutos completos con zona
+horaria; por defecto son las últimas 24 horas completas (1.440 posiciones). Se informa el número
+esperado, registrado y faltante. La disponibilidad de cada componente y la del motor se calcula
+como éxitos divididos por posiciones esperadas, incluyendo faltantes. API y motor tienen series
+separadas. No se reconstruye un minuto ausente a partir de uno posterior. La campaña de cierres
+se ejecuta fuera de esa ventana. Las dependencias HTTP se informan por separado.
+
+`ivostock.metrics_service` corre en el puerto interno 8002, publicado por defecto en 8004 del
+host para conservar 8002 para ML, y mantiene la recolección aunque se detenga la
+API principal. Reutiliza `services.monitor`, `runs_summary`, `health.worker_components` y las
+sesiones existentes. `/metrics/current` informa la edad de la última muestra; las lecturas no
+actualizan el histórico. `/metrics/history` entrega muestras del período y `/metrics/summary`
+calcula disponibilidad y publicación. Los tres requieren sesión y también están disponibles en
+la API principal para la vista Monitoreo. El `/health` del servicio confirma sólo su proceso.
+
+Monitoreo técnico pertenece a administración de plataforma. El TP conserva un único perfil:
+todas las cuentas de operador autenticadas pueden ver la pestaña y consultar `/metrics/*`.
+Esta simplificación no implementa un rol administrador. En un despliegue con perfiles separados,
+la vista y las consultas deben reservarse a administración; las operaciones de catálogo y
+publicación mantienen sus respuestas de negocio, sin modelos ni detalles de infraestructura.
+
+La muestra incluye `ml`, obtenido de `ml.repository.report` (el mismo de `ml-report`), y dos
+sondas HTTP existentes del PR #18: `ml` para `/health/live` y `ml_ready` para `/health`. Se
+incluye además el heartbeat de `ml-train` con su tolerancia de treinta segundos. El motor sigue
+evaluándose con sus cuatro workers originales. El servicio de ML puede estar activo sin una
+inferencia lista mientras reúne historial; se exponen ambos valores y la versión activa,
+observaciones incorporadas por proveedor, mínimo de historial, aceptados y aprendizaje pendiente.
+Un ML caído no convierte en caído al motor que continúa con respaldo. Las sondas de readiness
+reutilizan la prueba aritmética de lectura que ya define ML y no generan corridas ni aprendizaje.
+
+Para RNF-02 `publication_measurements` registra un origen por revisión: aceptación de la corrida
+(`runs.finished_at`), o creación del vínculo si ésta es posterior; para un corte, el instante
+registrado junto a la intención. Se conserva el origen durante reintentos y revisión manual.
+La creación de una intención nueva de corte incrementa revisión incluso si el deseado ya era
+cero, para que no reutilice una confirmación anterior. El simulador registra el primer efecto
+externo de `X-Ivo-Work` en su transacción de escritura y lo devuelve como `effect_at`. Al perder
+un acuse, una repetición devuelve ese primer efecto. El publicador confirma la medición en la
+misma transacción que el stock, sin usar la duración de un intento como latencia total.
+
+El resumen agrupa las revisiones originadas en el período por tienda y calcula `percentile_cont`
+de `effect_at-origin_at`; no promedia percentiles de muestras periódicas. Expone número de muestras,
+pendientes, reemplazos y duraciones desconocidas. Los pendientes y fallos sin confirmación no se
+convierten en muestras exitosas; el ensayo no se declara terminado mientras falten resultados.
+Una duración sin origen verificable o con tiempos inconsistentes es desconocida. Las revisiones
+reemplazadas se identifican y se excluyen de la distribución del trabajo vigente. Las tiendas
+sin muestras tienen p95/p99 nulos. El alcance de RNF-02 (dos tiendas sanas, mil vínculos por tienda,
+sin cola previa) debe acreditarse con su ensayo: el monitoreo ordinario no lo demuestra solo.
+
+`ivostock.observer` corre separado, sin acceso a PostgreSQL ni almacenamiento propio. En cada
+`GET /metrics` consulta estado y resumen del servicio interno y realiza GET a los health HTTP.
+Reenvía el Bearer para validarlo en el servicio de métricas. Puede desplegarse en otra máquina
+configurando las URLs; el perfil local comparte máquina y red. Se consulta una vez por minuto
+durante la campaña, pero la serie histórica pertenece al sistema: la ausencia del observador
+no se presenta como una medición externa exitosa. No genera trabajo, alertas ni notificaciones.
+La decisión y la comparación con UptimeRobot están en el [ADR-0017](../adr/0017-metricas-y-observador.md).
 
 Para RNF-09 se programan 9.000 consultas: cinco operadores durante treinta minutos, 50 % listados paginados de hasta cien vínculos, 25 % búsqueda de SKU y 25 % corridas/fallas. Se mide desde el cliente con motor activo, recursos declarados y sin ocultar errores. Las pruebas largas, la interfaz y ML son hitos del MVP, según el [roadmap](../roadmap/ROADMAP.md).

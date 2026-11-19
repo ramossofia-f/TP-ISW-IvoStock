@@ -25,7 +25,8 @@ def active_model(engine):
 
 def report(engine):
     with engine.begin() as conn:
-        model = rows(conn, "SELECT m.version,m.created_at,m.payload->'counts' AS counts "
+        model = rows(conn, "SELECT m.version,m.created_at,m.payload->'counts' AS counts,"
+                     "m.payload->'config'->'min_runs' AS min_runs "
                      "FROM ml_models m JOIN ml_state s ON m.version=s.active_version WHERE s.id=1")
         learning = dict(rows(conn, "SELECT count(*) AS accepted_observations,"
                              "count(*) FILTER(WHERE trained_version IS NULL) AS pending,"

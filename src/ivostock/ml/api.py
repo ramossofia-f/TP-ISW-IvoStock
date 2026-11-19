@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from ivostock.db import database, rows
+from ivostock.health import worker_components
 from ivostock.logs import configurar
 from ivostock.ml.contracts import ClassificationIn, ClassificationOut
 from ivostock.ml.repository import active_model
@@ -77,9 +78,8 @@ def ready():
 @app.get("/health/training")
 def training_health():
     with database().begin() as conn:
-        found = rows(conn, "SELECT 1 FROM worker_heartbeats WHERE name='ml-train' "
-                     "AND at>now()-interval '30 seconds'")
-    if not found:
+        available = worker_components(conn)["ml-train"]["available"]
+    if not available:
         raise HTTPException(503, "not_ready")
     return {"status": "ok"}
 
