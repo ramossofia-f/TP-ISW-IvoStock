@@ -67,7 +67,7 @@ Sólo `GET /health` y `POST /auth/login` funcionan sin sesión entre los endpoin
 
 ## API de configuración
 
-Es la base de la interfaz: los mismos servicios que la CLI, expuestos con sesión de operador. La referencia completa es el esquema OpenAPI, que se obtiene con sesión: `curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/openapi.json`. Incluye la lectura de corridas (`GET /runs`, `GET /runs/summary`). No incluye comandos de ensayo ni de operación interna (`fault`, `schedule-now`, `monitor`, `compare`, `publish`).
+Es la base de la interfaz: los mismos servicios que la CLI, expuestos con sesión de operador. La referencia completa es el esquema OpenAPI, que se obtiene con sesión: `curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/openapi.json`. Incluye la lectura de corridas (`GET /runs`, `GET /runs/summary`) y de fallas definitivas (`GET /deadletters`). No incluye comandos de ensayo ni de operación interna (`fault`, `schedule-now`, `monitor`, `compare`, `publish`).
 
 | Método y ruta | Acción |
 |---|---|
@@ -80,6 +80,7 @@ Es la base de la interfaz: los mismos servicios que la CLI, expuestos con sesió
 | `GET /providers/{id}/suggestions?store=T1&sku=&limit=&positive_only=` | Publicaciones sugeridas desde el último inventario aceptado, sin descargar nada |
 | `POST /providers/{id}/approve` | Aprueba `{"store": "T1", "all": true}`, `{"items": [...]}` o `{"count": N}`; con `positive_only` opcional |
 | `GET /links`, `GET /links/summary` | Vínculos paginados (`limit` hasta 100 y `next_offset`) y contadores, con filtro `store` |
+| `GET /deadletters` | Fallas definitivas (RF-19), la más reciente primero, con la publicación, el código HTTP, la respuesta recortada y si ya se revisó; filtros `store` y `pending_only`, paginadas. Un vínculo en error se reanuda con `POST /links/{id}/resume` |
 | `POST /links/{id}/off`, `POST /links/{id}/resume` | Apagar (202) y reanudar un vínculo fallido |
 
 Los errores son `{"detail": "..."}`: 404 si no existe, 409 si choca con el estado actual (nombre repetido, publicación ya asignada, catálogo aún importándose, ya dado de baja), 422 si la entrada o la fuente son inválidas, 502 si falla la fuente o el marketplace y 500 sin detalle ante un fallo interno. Para incorporar una segunda tienda con el inventario ya ingerido basta `POST /stores`, esperar `catalog_imported` y aprobar contra el mismo proveedor: no se descarga la fuente otra vez y una sola corrida posterior actualiza ambas tiendas. Una tienda fuera de `GET /stores/available` o inexistente en el marketplace responde 404 con un mensaje distinto en cada caso. Decisiones en el [ADR-0011](docs/adr/0011-api-de-configuracion.md).
@@ -89,7 +90,7 @@ Los errores son `{"detail": "..."}`: 404 si no existe, 409 si choca con el estad
 - **Marketplace simulado.** Las tiendas son un servicio HTTP propio con cuota de 60 llamadas/minuto y errores provocables. No hay OAuth: las credenciales están preconfiguradas por entorno. Un funcionamiento correcto contra el simulador no acredita la integración productiva.
 - **Catálogo sintético.** Las publicaciones se generan con SKU tomados del feed real; sus atributos no son reales y permanecen estáticos.
 - **Fuente real archivada.** Celesa se reproduce desde un snapshot archivado y servido localmente por HTTP, no desde el endpoint vivo. Las variantes de cambios y fallas son sintéticas y se identifican como tales.
-- **Interfaz sin intentos ni cartas muertas.** La interfaz cubre proveedores, tiendas, vinculación, vínculos y el tablero de corridas sobre la [API de configuración](#api-de-configuración) (RF-25, ver [ADR-0013](docs/adr/0013-interfaz-estatica.md)); no muestra los intentos de publicación ni las dead letters, que se consultan con `status deadletters` en la CLI. La sesión `usuario>` sigue usando las mismas cuentas de operador que la API (RF-01, ver [Cuentas de operador](#cuentas-de-operador)).
+- **Interfaz sin intentos de publicación.** La interfaz cubre proveedores, tiendas, vinculación, vínculos, el tablero de corridas y las fallas definitivas sobre la [API de configuración](#api-de-configuración) (RF-25, ver [ADR-0013](docs/adr/0013-interfaz-estatica.md)); no muestra cada intento de publicación, que se consulta con `monitor` en la CLI. La sesión `usuario>` sigue usando las mismas cuentas de operador que la API (RF-01, ver [Cuentas de operador](#cuentas-de-operador)).
 - **Tiendas aprovisionadas aparte.** `scripts/provisionar_tiendas.py` crea en el simulador las tiendas de `MARKETPLACE_STORES` (T1 y T2) con el 50 % de los SKU distintos del inventario configurado (`CATALOG_FEED`), con la mitad de esa muestra común a todas y el resto propio de cada una, y todas con stock cero. En producción las tiendas ya existirían: la aplicación (API, `store-add` y la sesión de usuario) sólo incorpora las que ya existen y nunca usa la credencial de control.
 - **Proveedor con variantes.** El servicio `provider` reproduce el archivo archivado y, en cada consulta, permuta las cantidades positivas del 40 % de los SKU. `?no-changes=true` devuelve el archivo intacto.
 - **Un proveedor.** Las mediciones de escala, consulta y disponibilidad son del MVP.

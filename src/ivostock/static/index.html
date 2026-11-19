@@ -22,6 +22,7 @@
             <li><button type="button" class="nav-link" data-view="vinculacion">Vinculación</button></li>
             <li><button type="button" class="nav-link" data-view="vinculos">Mis vínculos</button></li>
             <li><button type="button" class="nav-link" data-view="corridas">Corridas</button></li>
+            <li><button type="button" class="nav-link" data-view="fallas">Fallas</button></li>
             <li><button type="button" class="nav-link" data-view="monitoreo">Monitoreo</button></li>
             <li class="spacer"><span id="who"></span></li>
             <li><button type="button" class="nav-link" id="btn-logout">Cerrar sesión</button></li>
@@ -177,6 +178,32 @@
                 <button type="button" id="btn-next-runs" disabled>Siguiente</button>
             </div>
         </section>
+        <section id="view-fallas" class="view hidden">
+            <h2>Fallas definitivas</h2>
+            <p class="muted">Publicaciones que el marketplace rechazó de forma definitiva o que agotaron sus reintentos. El vínculo queda en error hasta que se reanuda: reanudarlo vuelve a publicar el último stock deseado y marca la falla como revisada. Se actualiza sola cada 5 segundos.</p>
+            <div class="filters">
+                <label for="fallas-tienda" class="visually-hidden">Filtrar por tienda</label>
+                <select id="fallas-tienda"></select>
+                <label class="inline"><input type="checkbox" id="fallas-pendientes" checked> Sólo sin revisar</label>
+            </div>
+            <div class="table-wrap">
+                <table id="table-fallas">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th><th>Vínculo</th><th>Tienda</th><th>Publicación</th><th>SKU</th>
+                            <th>Cantidad</th><th>HTTP</th><th>Respuesta</th><th>Estado</th><th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <button type="button" id="btn-prev-fallas" disabled>Anterior</button>
+                <span id="current-fallas-page">1</span>
+                <button type="button" id="btn-next-fallas" disabled>Siguiente</button>
+            </div>
+        </section>
+
         <section id="view-monitoreo" class="view hidden">
             <h2>Monitoreo técnico</h2>
             <p id="metricas-muestra"></p>

@@ -427,6 +427,7 @@ La API de la aplicación (`ivostock.main`, puerto 8000) expone la configuración
 | `GET /stores`, `GET /stores/available`, `POST /stores` | Tiendas con progreso de importación; las preconfiguradas en `MARKETPLACE_STORES`; incorporar una tienda que ya existe en el marketplace |
 | `GET /links`, `GET /links/summary`, `POST /links/{id}/off`, `POST /links/{id}/resume` | Vínculos paginados y contadores; apagado con cero confirmado antes de desactivar; reanudación de un vínculo fallido |
 | `GET /runs`, `GET /runs/summary` | Corridas de ingesta, de sólo lectura, y su conteo por estado |
+| `GET /deadletters` | Fallas definitivas, de sólo lectura, con el estado actual del vínculo y la respuesta del marketplace recortada a 300 caracteres |
 | `GET /health` | Disponibilidad de proceso y esquema, sin datos de negocio |
 | `GET /metrics/current`, `GET /metrics/history`, `GET /metrics/summary` | Último estado con antigüedad y heartbeats actuales; serie del período; disponibilidad y percentiles por tienda. Sólo lectura y autenticados; router compartido con el servicio de métricas |
 
