@@ -112,3 +112,12 @@ def test_reporte_muestra_resultado_tipos_y_motor():
     assert "**Resultado: cumple.**" in texto
     assert "| **Total** | 50 | 0 | 50 | 50 | 50 | 50 |" in texto
     assert "Corridas: #3 accepted. Publicaciones aplicadas durante la medición: 900." in texto
+
+
+def test_credenciales_con_el_formato_de_configurar(tmp_path):
+    ruta = tmp_path / "operadores.txt"
+    ruta.write_text("".join(f"operador{n}: clave-{n}\n" for n in range(1, 6)), encoding="utf-8")
+    assert ensayo.credenciales(ruta) == [[f"operador{n}", f"clave-{n}"] for n in range(1, 6)]
+    ruta.write_text("operador1: clave\n", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        ensayo.credenciales(ruta)

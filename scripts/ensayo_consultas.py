@@ -168,8 +168,11 @@ async def ejecutar(tokens, consultas):
 
 
 def credenciales(ruta=Path("data/operadores.txt")):
+    # `configurar.py` escribe `usuario: contraseña`, con un espacio después de los dos puntos.
     pares = [
-        linea.split(":", 1) for linea in ruta.read_text(encoding="utf-8").splitlines() if linea
+        [parte.strip() for parte in linea.split(":", 1)]
+        for linea in ruta.read_text(encoding="utf-8").splitlines()
+        if linea.strip()
     ]
     if len(pares) < OPERADORES:
         raise SystemExit(f"Se necesitan {OPERADORES} cuentas en {ruta}")
