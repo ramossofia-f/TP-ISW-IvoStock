@@ -296,9 +296,11 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8003/metrics
 
 Cada GET consulta el estado interno y su resumen y comprueba los health HTTP de API, simulador y
 proveedor. Devuelve JSON, sin acciones de negocio ni persistencia. No inicia sesión por el usuario:
-reenvía el Bearer al servicio de métricas. Si la API principal está detenida, se puede iniciar o
-renovar sesión por `POST http://localhost:8004/auth/login` usando las mismas cuentas. La sesión
-vence a los 480 minutos por defecto; su vencimiento no interrumpe el muestreo interno.
+reenvía el Bearer al servicio de métricas. El único login es `POST /auth/login` en la API principal
+(puerto 8000); métricas sólo valida esa sesión y expone `GET /auth/me`. Si la API cae, un token
+vigente sigue sirviendo para consultar métricas; renovar una sesión vencida requiere que vuelva
+la API. La sesión vence a los 480 minutos por defecto; su vencimiento no interrumpe el muestreo
+interno ni pierde el histórico de la campaña de 24 horas.
 
 Para ejecutarlo en otra máquina, configurar `METRICS_URL`, `API_URL`, `SIMULATOR_URL` y
 `PROVIDER_URL`, y `ML_URL` para las sondas de ML, y ejecutar
@@ -315,13 +317,22 @@ incluye su tamaño de muestra, pendientes, reemplazos y duraciones desconocidas;
 los percentiles son `null`. Un valor bajo mientras faltan publicaciones no acredita RNF-02.
 Los vínculos existentes al migrar no reciben una fecha de creación inventada. La instrumentación
 de revisión del simulador conserva el primer efecto aunque se pierda su acuse y se repita el envío.
+La migración `0009` reemplaza el índice de tienda/registro por índices de las expresiones
+`COALESCE(origin_at, recorded_at)` y `COALESCE(confirmed_at, superseded_at)`, usadas por la ventana
+de publicación y la retención, respectivamente.
 
 Para RNF-07 mantener el sistema encendido 24 horas y consultar el observador cada minuto con una
 sesión vigente; el histórico lo persiste exclusivamente `metrics`. Al terminar, consultar
 `/metrics/summary?start=INICIO_ISO&end=FIN_ISO` y conservar el resultado de la ventana elegida como
 evidencia de entrega antes de que expire su retención. El observador no guarda archivos ni acredita
-su propia continuidad histórica. La campaña de 24 horas y el ensayo de dos tiendas/2.000 vínculos
-siguen siendo ejecuciones pendientes; las pruebas automatizadas no los sustituyen.
+su propia continuidad histórica. La campaña de 24 horas sigue pendiente de ejecución;
+las pruebas automatizadas no la sustituyen.
+
+Para fijar una ventana única que conserve los cortes de un equipo que se reinicia, usar
+`scripts/medir_disponibilidad.py start` y, al terminar, `report`. El comando guarda las fechas y
+exporta resumen e histórico sin sobrescribir evidencia. La [preparación del laboratorio](docs/entregas/RNF07-LABORATORIO.md)
+detalla el inicio límite del 22/11, la recuperación y el tratamiento del apagado diario. Los
+reportes de las otras mediciones están en los PR #21 y #25; RNF-07 sigue pendiente de ejecución.
 
 ## Pruebas
 

@@ -39,12 +39,13 @@ def test_metrics_health_and_authentication_do_not_depend_on_the_main_api():
 
     client = TestClient(app)
     assert client.get("/health").json() == {"status": "ok"}
-    for path in ("/metrics/current", "/metrics/history", "/metrics/summary", "/openapi.json"):
+    for path in ("/metrics/current", "/metrics/history", "/metrics/summary", "/openapi.json", "/auth/me"):
         assert client.get(path).status_code == 401
     assert client.get("/docs").status_code == 404
     response = client.post("/auth/login", json={"username": "x" * 65, "password": "private"})
-    assert response.status_code == 422
+    assert response.status_code == 404
     assert "private" not in response.text and '"input"' not in response.text
+    assert client.post("/auth/logout").status_code == 404
 
 
 @pytest.mark.integration
@@ -231,5 +232,11 @@ def test_the_same_authenticated_metrics_contract_is_available_in_both_services(a
         assert independent.get(path).status_code == 200
         assert api.get(path).status_code == 200
     assert independent.get("/openapi.json").status_code == 200
+    assert independent.get("/auth/me").json() == api.get("/auth/me").json()
+    paths = independent.get("/openapi.json").json()["paths"]
+    assert "/auth/login" not in paths and "/auth/logout" not in paths
     with engine.begin() as conn:
         assert rows(conn, "SELECT count(*) AS n FROM metric_samples")[0]["n"] == 0
+    assert api.post("/auth/logout").status_code == 200
+    assert independent.get("/metrics/current").status_code == 401
+    assert independent.get("/auth/me").status_code == 401

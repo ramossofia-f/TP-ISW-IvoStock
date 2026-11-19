@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 
 from ivostock import api_auth, api_metrics, metrics
 from ivostock.api_auth import require_operator
-from ivostock.api_errors import invalid_request
+from ivostock.api_errors import SafeRoute, invalid_request
 from ivostock.db import database
 from ivostock.logs import configurar
 
@@ -44,7 +44,9 @@ async def lifespan(app):
 app = FastAPI(
     title="Ivo Stock · Métricas", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
 )
-app.include_router(api_auth.router)
+app.router.route_class = SafeRoute
+# Reutiliza la validación de sesión, sin abrir otro punto de login ni de logout.
+app.add_api_route("/auth/me", api_auth.me, methods=["GET"], responses=api_auth.UNAUTHENTICATED)
 app.include_router(api_metrics.router)
 app.add_exception_handler(RequestValidationError, invalid_request)
 

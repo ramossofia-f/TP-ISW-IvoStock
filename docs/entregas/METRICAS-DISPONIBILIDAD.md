@@ -70,7 +70,36 @@ que una preferencia regional vuelva ambigua la hora del último entrenamiento. E
 comprobaciones demuestran instrumentación y funcionamiento del circuito reducido; no acreditan
 precisión del modelo con datos reales ni los ensayos RNF-02/RNF-07/RNF-09/RNF-15.
 
-## Pendiente de medir
+## Estado al 19/11/2026
+
+El último #18 se incorporó en #19 después de ejecutar Update branch en #18. La guarda vuelve
+a preceder siempre al modelo, y ADR-0016 conserva su estado propuesto. En la revisión de #19
+se quitó el segundo login: sólo la API principal inicia/cierra sesiones; métricas valida el
+mismo token y conserva `GET /auth/me`. Una sesión revocada en la API deja de servir en métricas.
+
+La migración `0009` agrega índices de las expresiones usadas por ventana y retención, sin
+reescribir `0008` en bases existentes. Se verificaron upgrade, downgrade y nuevo upgrade en
+`ivostock_indexes_test`. EXPLAIN con `enable_seqscan=off` confirmó que ambos filtros pueden usar
+sus índices; esto demuestra compatibilidad de expresiones, no una mejora de rendimiento medida.
+
+La suite completa de esta integración y los ajustes de login/índices aprobó **323 pruebas** en
+Docker en 355,73 s, con una omitida por falta de Node. En el host pasaron las doce pruebas de
+avisos, métricas, observador y monitoreo seleccionadas, incluida la omitida con Node.
+Ruff, documentación, secretos y `git diff --check` pasaron. La corrida inicial en Windows tuvo
+dos fallas preexistentes relacionadas con permisos POSIX y conversión de saltos de línea;
+ambas pasaron en la suite Linux de Docker.
+
+Los [ensayos de dos tiendas (#21)](https://github.com/ramossofia-f/TP-ISW-IvoStock/pull/21)
+y [consultas (#25)](https://github.com/ramossofia-f/TP-ISW-IvoStock/pull/25) ya publican evidencia
+con Celesa. **RNF-07 es la única medición pendiente.** La [preparación del laboratorio](RNF07-LABORATORIO.md)
+incluye registro de una ventana inmutable y exportación con faltantes; no acredita una campaña
+iniciada ni terminada. Los nuevos casos de prueba comprueban rechazo de sobrescritura,
+exportación anticipada y conservación de los cortes al exportar después de reiniciar:
+**tres pruebas aprobadas en Docker y en el host**, agregadas después de la suite completa.
+
+## Pendientes históricos de la verificación inicial
+
+Esta lista corresponde a la verificación inicial del #19; el estado actualizado es el anterior.
 
 - RNF-07: ventana real de 24 horas, con inicio/fin explícitos y 1.440 posiciones por serie.
 - RNF-02 y RNF-15: dos tiendas sanas, 1.000 vínculos por tienda, sin cola previa; recursos y
