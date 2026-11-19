@@ -127,14 +127,16 @@ También permite `--ceros`, `--corruptas`, `--deriva` y `--bajas` (SKU dispersos
 
 ### Detector global de normalidad (ML)
 
-El componente vigente ([ADR-0016](docs/adr/0016-normalidad-global-y-aprendizaje-durable.md)) aprende
+El componente implementado ([ADR-0016 propuesto](docs/adr/0016-normalidad-global-y-aprendizaje-durable.md)) aprende
 únicamente de corridas aceptadas: OneClassSVM RBF, proveedor one-hot y siete estadísticas ya
 calculadas por ingesta. `ml` sirve la inferencia en Python puro; `ml-train` instala sklearn y
 reentrena en segundo plano. `make up` inicia ambos, sin esperar a reunir el historial.
 
-Para cada proveedor, las reglas deciden hasta que una versión entrenada incorpore diez aceptados
-suyos. Después decide ML; si no responde en un segundo total, se vuelve a las reglas. Aceptar
-deja una observación durable, independientemente de que haya decidido ML o el respaldo. El
+La guarda fija es obligatoria: p>0,5 pone en cuarentena sin consultar ML. Si pasa, el modelo
+puede agregar cuarentenas una vez que su versión incorpore diez aceptados del proveedor.
+Cuarentena = guarda o ML; ningún modelo, aprobación ni replay omite la guarda. Durante el
+calentamiento o si ML no responde en un segundo total, decide sólo la guarda. Aceptar
+deja una observación durable, incluso cuando no se pudo consultar al modelo. El
 entrenamiento no demora la publicación. Una caída conserva el modelo anterior y los pendientes.
 Al recuperar se procesa cada observación una vez; una cuarentena nunca entrena.
 
@@ -170,7 +172,9 @@ evaluación sintética del diseño vigente se reproduce con
 `uv run --group ml python scripts/ml_evaluar_normalidad.py`; el [reporte](docs/entregas/ML-NORMALIDAD-EVALUACION.md)
 declara falsas cuarentenas y detecciones sobre escenarios reservados. La
 [evaluación anterior](docs/entregas/ML-EVALUACION.md), `scripts/ml_entrenar.py` y su `modelo.json`
-pertenecen al experimento binario histórico y no activan ni evalúan el detector vigente.
+pertenecen al experimento binario histórico y no activan ni evalúan el detector implementado.
+El ADR-0016 queda propuesto hasta que lo revisen los tres integrantes; la calidad del detector
+sigue bajo revisión y no se acredita una mejora respecto de la logística con ensayos distintos.
 
 El [registro de verificación](docs/entregas/ML-NORMALIDAD-VERIFICACION.md) separa las comprobaciones
 de modelo, circuito, recuperación, privacidad y avisos de los ensayos todavía no realizados.
@@ -292,9 +296,11 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8003/metrics
 
 Cada GET consulta el estado interno y su resumen y comprueba los health HTTP de API, simulador y
 proveedor. Devuelve JSON, sin acciones de negocio ni persistencia. No inicia sesión por el usuario:
-reenvía el Bearer al servicio de métricas. Si la API principal está detenida, se puede iniciar o
-renovar sesión por `POST http://localhost:8004/auth/login` usando las mismas cuentas. La sesión
-vence a los 480 minutos por defecto; su vencimiento no interrumpe el muestreo interno.
+reenvía el Bearer al servicio de métricas. El único login es `POST /auth/login` en la API principal
+(puerto 8000); métricas sólo valida esa sesión y expone `GET /auth/me`. Si la API cae, un token
+vigente sigue sirviendo para consultar métricas; renovar una sesión vencida requiere que vuelva
+la API. La sesión vence a los 480 minutos por defecto; su vencimiento no interrumpe el muestreo
+interno ni pierde el histórico de la campaña de 24 horas.
 
 Para ejecutarlo en otra máquina, configurar `METRICS_URL`, `API_URL`, `SIMULATOR_URL` y
 `PROVIDER_URL`, y `ML_URL` para las sondas de ML, y ejecutar
@@ -311,13 +317,22 @@ incluye su tamaño de muestra, pendientes, reemplazos y duraciones desconocidas;
 los percentiles son `null`. Un valor bajo mientras faltan publicaciones no acredita RNF-02.
 Los vínculos existentes al migrar no reciben una fecha de creación inventada. La instrumentación
 de revisión del simulador conserva el primer efecto aunque se pierda su acuse y se repita el envío.
+La migración `0009` reemplaza el índice de tienda/registro por índices de las expresiones
+`COALESCE(origin_at, recorded_at)` y `COALESCE(confirmed_at, superseded_at)`, usadas por la ventana
+de publicación y la retención, respectivamente.
 
 Para RNF-07 mantener el sistema encendido 24 horas y consultar el observador cada minuto con una
 sesión vigente; el histórico lo persiste exclusivamente `metrics`. Al terminar, consultar
 `/metrics/summary?start=INICIO_ISO&end=FIN_ISO` y conservar el resultado de la ventana elegida como
 evidencia de entrega antes de que expire su retención. El observador no guarda archivos ni acredita
-su propia continuidad histórica. La campaña de 24 horas y el ensayo de dos tiendas/2.000 vínculos
-siguen siendo ejecuciones pendientes; las pruebas automatizadas no los sustituyen.
+su propia continuidad histórica. La campaña de 24 horas sigue pendiente de ejecución;
+las pruebas automatizadas no la sustituyen.
+
+Para fijar una ventana única que conserve los cortes de un equipo que se reinicia, usar
+`scripts/medir_disponibilidad.py start` y, al terminar, `report`. El comando guarda las fechas y
+exporta resumen e histórico sin sobrescribir evidencia. La [preparación del laboratorio](docs/entregas/RNF07-LABORATORIO.md)
+detalla el inicio límite del 22/11, la recuperación y el tratamiento del apagado diario. Los
+reportes de las otras mediciones están en los PR #21 y #25; RNF-07 sigue pendiente de ejecución.
 
 ## Pruebas
 
@@ -334,8 +349,8 @@ La integración crea y limpia exclusivamente `ivostock_test` y usa `snapshots-te
 
 El ensayo real y la interrupción del servicio PostgreSQL se ejecutan con `uv run python scripts/evaluar_poc.py --source "RUTA_AL_ORIGINAL" --captured-at "FECHA_DEL_ARCHIVO"`. Ese ensayo detiene temporalmente API y workers del proyecto, conserva los volúmenes y deja un reporte en `data/evidencia/poc.json`. Usa un proveedor y una tienda de ensayo identificados por ejecución.
 
-El ensayo de dos tiendas (RNF-02 y RNF-15) corre contra el stack levantado, con T1 y T2 aprovisionadas y sin vínculos, por ejemplo en un `COMPOSE_PROJECT_NAME` nuevo: `uv run python scripts/ensayo_dos_tiendas.py`, o con `--base data/feeds/celesa.csv` para el inventario real. Las tiendas se aprovisionan con el mismo feed: para el sintético, el `demo.csv` de la [demostración sin el inventario real](#sin-el-inventario-real), que usa la misma semilla y cantidad de SKU. Aprueba 1.000 vínculos por tienda, adelanta dos corridas y mide el tiempo desde la aceptación hasta el efecto externo. Dura alrededor de media hora con el feed sintético y algo más de una hora con el real; el equipo debe quedar enchufado y sin suspenderse (en macOS, anteponer `caffeinate -i`). Si se suspende, el ensayo lo detecta y no escribe el reporte. Guarda el detalle en `data/evidencia/` y el resumen en `docs/entregas/ENSAYO-DOS-TIENDAS-*.md`; sale con código 1 si alguna tienda no cumple. Resultados [con Celesa](docs/entregas/ENSAYO-DOS-TIENDAS-CELESA.md) y [con el feed sintético](docs/entregas/ENSAYO-DOS-TIENDAS-SINTETICO.md).
+El ensayo de dos tiendas (RNF-02 y RNF-15) corre contra el stack levantado, con T1 y T2 aprovisionadas y sin vínculos, por ejemplo en un `COMPOSE_PROJECT_NAME` nuevo: `uv run python scripts/ensayo_dos_tiendas.py`, o con `--base data/feeds/celesa.csv` para el inventario real. Las tiendas se aprovisionan con el mismo feed: para el sintético, el que genera `docker compose run --rm cli python -m ivostock.generador.feeds --salida data/feeds/demo.csv --skus 10000 --semilla 7`, con la misma semilla y cantidad de SKU que usa el ensayo. Aprueba 1.000 vínculos por tienda, adelanta dos corridas y mide el tiempo desde la aceptación hasta el efecto externo. Dura alrededor de media hora con el feed sintético y algo más de una hora con el real; el equipo debe quedar enchufado y sin suspenderse (en macOS, anteponer `caffeinate -i`). Si se suspende, el ensayo lo detecta y no escribe el reporte. Guarda el detalle en `data/evidencia/` y el resumen en `docs/entregas/ENSAYO-DOS-TIENDAS-*.md`; sale con código 1 si alguna tienda no cumple. Resultados [con Celesa](docs/entregas/ENSAYO-DOS-TIENDAS-CELESA.md) y [con el feed sintético](docs/entregas/ENSAYO-DOS-TIENDAS-SINTETICO.md).
 
 El ensayo de consultas (RNF-09) corre en el mismo proyecto después del de dos tiendas, que deja los 2.000 vínculos: `uv run python scripts/ensayo_consultas.py --fuente celesa` (o `--fuente sintetico`). Inicia sesión con las cinco cuentas de `data/operadores.txt` y durante 30 minutos hace 9.000 consultas a la API con el reparto del SRD, mientras adelanta dos ingestas para que el motor publique. Mide en el cliente desde el instante programado de cada consulta; un error o un timeout hace que no cumpla. `--minutos 1` sirve como prueba rápida. [Resultado con Celesa](docs/entregas/ENSAYO-CONSULTAS-CELESA.md).
 
-El [registro de E2](docs/entregas/ENTREGA-2.md) separa resultados históricos de ensayos pendientes. Las pruebas largas de disponibilidad, capacidad de interfaz y dos tiendas corresponden al MVP. El diseño vigente de ML está en el ADR-0016.
+El [registro de E2](docs/entregas/ENTREGA-2.md) separa resultados históricos de ensayos pendientes. Las pruebas largas de disponibilidad, capacidad de interfaz y dos tiendas corresponden al MVP. El diseño de ML implementado para revisión está en el ADR-0016 propuesto.

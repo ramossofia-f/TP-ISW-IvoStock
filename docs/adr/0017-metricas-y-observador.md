@@ -49,7 +49,9 @@ interno y a los health HTTP. No tiene credenciales de PostgreSQL, volúmenes, te
 escritura ni histórico propio. Cada consulta devuelve métricas JSON: no genera alertas, acciones,
 notificaciones ni etiquetas de cumplimiento. El tablero también muestra valores numéricos.
 La consulta requiere un token de operador validado por el servicio de métricas; no se crean
-otro login ni otra base de usuarios. Las sesiones pueden iniciarse en métricas si la API cae.
+otra base de usuarios. El único login está en la API principal; métricas sólo valida el token
+y expone `GET /auth/me`. Si la API cae, el token vigente permite seguir consultando; renovar
+una sesión vencida espera su recuperación. El muestreo interno no depende de esa sesión.
 
 Monitoreo es una herramienta de administración técnica. Para el TP sigue visible para todas
 las cuentas precreadas porque comparten el único perfil de permisos existente. Esta excepción
@@ -89,6 +91,13 @@ Los percentiles se calculan sobre mediciones individuales, nunca promediando per
 minuto. Se informan también pendientes, reemplazos y duraciones desconocidas; no se declara
 cumplido RNF-02 si aún faltan efectos por confirmar. Una tienda sin muestras tiene percentiles
 nulos. No se incorporan alertas ni pruebas sintéticas dentro del observador.
+
+La migración `0009` sustituye el índice `(store_id, recorded_at)` de la migración `0008` por
+índices de expresión sobre `COALESCE(origin_at, recorded_at)` para la ventana global y
+`COALESCE(confirmed_at, superseded_at)` para la retención. Corresponden a los filtros reales:
+la consulta selecciona el período antes de agrupar por tienda. PostgreSQL sigue decidiendo
+si conviene usarlos según el tamaño de la tabla; no se fuerza un plan ni se atribuye una mejora
+de rendimiento sin medirla.
 
 ## Comprobación
 

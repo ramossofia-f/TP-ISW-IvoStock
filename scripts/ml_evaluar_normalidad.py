@@ -41,14 +41,17 @@ def evaluate(seed=16, train_count=200, test_count=50):
     model = NormalityModel(payload)
     results = []
     for order, (scenario, (label, _)) in enumerate(ESCENARIOS.items()):
-        rules = ml = 0
+        rules = ml = combined = 0
         for provider in (1, 2):
             for index in range(test_count):
                 values = sample(provider, scenario,
                                 seed * 10_000_019 + order * 100_003 + provider * 1009 + index)
-                rules += values["p"] > 0.5
-                ml += not model.classify(provider, values)["accepted"]
-        results.append((scenario, label, test_count * 2, rules, ml))
+                guard_rejects = values["p"] > 0.5
+                ml_rejects = not model.classify(provider, values)["accepted"]
+                rules += guard_rejects
+                ml += ml_rejects
+                combined += guard_rejects or ml_rejects
+        results.append((scenario, label, test_count * 2, rules, ml, combined))
     return payload, results
 
 
@@ -65,7 +68,7 @@ def main():
     payload, results = evaluate(args.seed, args.train_per_provider, args.test_per_scenario_provider)
     lines = [
         "# Evaluación sintética del detector global de normalidad", "",
-        "Diseño vigente: [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md).",
+        "Diseño implementado para revisión: [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md).",
         "Este ensayo no activa modelos ni usa feeds reales. Entrena sólo con escenarios estables",
         "que pasan las reglas; evalúa semillas disjuntas. Las etiquetas se usan exclusivamente",
         "para medir en prueba, nunca para entrenar. Los agotamientos y depuraciones legítimos",
@@ -74,14 +77,19 @@ def main():
         f"{args.train_per_provider} aceptados por proveedor separados cinco horas.",
         f"Configuración: `{payload['config']}`. Versión `{payload['version']}`.",
         f"Bibliotecas: `{payload['libraries']}`. Hash del conjunto `{payload['dataset_hash']}`.", "",
-        "| Escenario reservado | Etiqueta de evaluación | Ejemplos | Rechazo por reglas | Rechazo por ML |",
-        "|---|---|---:|---:|---:|",
+        "| Escenario reservado | Etiqueta de evaluación | Ejemplos | Rechazo por guarda | Rechazo por ML solo | Guarda o ML |",
+        "|---|---|---:|---:|---:|---:|",
     ]
-    for name, label, n, rules, ml in results:
+    for name, label, n, rules, ml, combined in results:
         kind = "Defectuoso" if label else "Sano (falsa cuarentena si se rechaza)"
-        lines.append(f"| {name} | {kind} | {n} | {rules / n:.1%} | {ml / n:.1%} |")
+        lines.append(f"| {name} | {kind} | {n} | {rules / n:.1%} | {ml / n:.1%} | {combined / n:.1%} |")
     lines += ["", "En defectuosos, rechazo equivale a detección; en sanos, a falsas cuarentenas.",
-              "ML decide por sí mismo: la columna de reglas es una referencia, no una decisión combinada.",
+              "La decisión integrada es guarda o ML. ML solo se muestra como diagnóstico del detector;",
+              "en producción no se consulta el modelo cuando la guarda ya rechaza la corrida.",
+              "Conservar la guarda mantiene todos sus rechazos, pero no reduce falsas cuarentenas de ML.",
+              "Este ensayo no demuestra una mejora sobre la logística ni el cumplimiento del presupuesto",
+              "de falsas cuarentenas del ADR-0015. Los conjuntos, variables y protocolos de la",
+              "[evaluación binaria](ML-EVALUACION.md) difieren: no es una comparación controlada.",
               "El resultado depende de estos escenarios y no acredita precisión con proveedores reales.",
               "Las novedades legítimas rechazadas no se aprenderían automáticamente en producción:",
               "es una limitación del aprendizaje sólo de aceptados. Tampoco se puede detectar un",

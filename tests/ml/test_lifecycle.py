@@ -12,7 +12,7 @@ from sqlalchemy.exc import DBAPIError
 
 from ivostock import cli, services
 from ivostock.db import execute, rows
-from ivostock.ml import training
+from ivostock.ml import client, training
 from ivostock.ml.repository import active_model, observe, report
 from tests.helpers import admin, drain, import_catalogs, seed
 
@@ -129,6 +129,38 @@ def test_anomaly_has_no_event_no_learning_and_no_public_ml_metrics(
     feed_server["write"]({**feed_server["stock"], "A000": 20})
     assert services.ingest(engine, provider)["status"] == "accepted"
     assert api.get("/providers").json()[0]["quarantine_run_id"] is None
+
+
+@pytest.mark.parametrize("all_zero", [False, True], ids=["missing_skus", "zero_quantities"])
+def test_guard_blocks_mass_zero_even_with_a_permissive_ready_model(
+    engine, feed_server, ml_server, monkeypatch, all_zero,
+):
+    provider = world(engine, feed_server)
+    warm(engine, feed_server, provider)
+    version = active_model(engine).version
+    before = report(engine)["learning"]
+    events = scalar(engine, "SELECT count(*) AS n FROM comparison_events")["n"]
+    calls = []
+
+    async def permissive(*args):
+        calls.append(args)
+        return {"accepted": True, "score": 1.0, "version": version}, None
+
+    # Aun si la inferencia permitiera el feed, la guarda impide llegar a consultarla.
+    monkeypatch.setattr(client, "request_classification", permissive)
+    feed_server["write"]({sku: 0 for sku in feed_server["stock"]} if all_zero else {})
+    run = services.ingest(engine, provider)
+    assert run["status"] == "quarantined" and not calls
+    decision = scalar(engine, "SELECT metrics->'ml' AS ml FROM runs WHERE id=:r", r=run["id"])["ml"]
+    assert decision == {"accepted": False, "source": "rules", "guard_accepted": False,
+                        "fallback_reason": None, "score": None, "version": None}
+    assert report(engine)["learning"] == before
+    assert active_model(engine).version == version and not training.train_once(engine)
+    assert scalar(engine, "SELECT count(*) AS n FROM comparison_events")["n"] == events
+    assert scalar(engine, "SELECT count(*) AS n FROM stock WHERE quantity>0")["n"] == 50
+    assert not services.compare_once(engine)
+    assert services.status(engine, "tasks") == []
+    assert admin("/admin/stores/T1")[0]["available_quantity"] == 19
 
 
 def test_outage_keeps_learning_and_recovery_processes_it_once(engine, feed_server, ml_server):
