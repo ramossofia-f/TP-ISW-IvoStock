@@ -477,6 +477,45 @@ def test_resume_rejects_unknown_and_inactive_links(api, engine, feed_server):
     assert api.post("/links/1/resume").status_code == 409
 
 
+# --- Fallas definitivas (tablero de RF-25) ---------------------------------------------------
+
+
+def test_dead_letters_list_the_failed_publication_until_it_is_resumed(api, engine, feed_server):
+    assert api.get("/deadletters").json() == {"items": [], "next_offset": None}
+    linked(api, engine, feed_server, items=1, publish=False)
+    admin("/admin/fault", {"store": "T1", "status": 404, "remaining": 1})
+    assert publish_once(engine)
+    (failure,) = api.get("/deadletters").json()["items"]
+    (link,) = api.get("/links").json()["items"]
+    assert failure["link_id"] == link["id"] and failure["link_state"] == "error"
+    assert (failure["store_id"], failure["item_id"], failure["sku"]) == (
+        link["store_id"],
+        link["item_id"],
+        link["sku"],
+    )
+    assert failure["http_status"] == 404 and failure["quantity"] == link["desired"]
+    assert failure["reviewed_at"] is None and len(failure["response"]) <= 300
+    assert api.get("/deadletters", params={"pending_only": True}).json()["items"] == [failure]
+    assert api.get("/deadletters", params={"store": "T2"}).json()["items"] == []
+    assert api.post(f"/links/{link['id']}/resume").status_code == 200
+    (reviewed,) = api.get("/deadletters").json()["items"]
+    assert reviewed["reviewed_at"] and reviewed["link_state"] == "active"
+    assert api.get("/deadletters", params={"pending_only": True}).json()["items"] == []
+
+
+def test_dead_letters_are_paginated_newest_first(api, engine, feed_server):
+    linked(api, engine, feed_server, items=2, publish=False)
+    admin("/admin/fault", {"store": "T1", "status": 404, "remaining": 2})
+    assert publish_once(engine) and publish_once(engine)
+    first = api.get("/deadletters", params={"limit": 1}).json()
+    assert len(first["items"]) == 1 and first["next_offset"] == 1
+    second = api.get("/deadletters", params={"limit": 1, "offset": 1}).json()
+    assert second["next_offset"] is None
+    assert first["items"][0]["id"] > second["items"][0]["id"]
+    for bad in ({"limit": 0}, {"limit": 101}, {"offset": -1}, {"store": "no válida"}):
+        assert api.get("/deadletters", params=bad).status_code == 422
+
+
 # --- Autenticación, OpenAPI y errores (B5, B6, RNF-11, RNF-16) ------------------------------
 
 OPERATIONS = {
@@ -493,6 +532,7 @@ OPERATIONS = {
     ("post", "/stores"),
     ("get", "/links"),
     ("get", "/links/summary"),
+    ("get", "/deadletters"),
     ("post", "/links/{link_id}/off"),
     ("post", "/links/{link_id}/resume"),
     ("get", "/runs"),

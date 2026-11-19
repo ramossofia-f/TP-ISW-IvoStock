@@ -13,6 +13,7 @@ const TOKEN_KEY = 'ivostock.token';
 const POLL_MS = 5000;
 const PAGE_SIZE = 50;
 const RUNS_PAGE_SIZE = 20;
+const DEAD_LETTERS_PAGE_SIZE = 20;
 const SUGGESTION_LIMIT = 50;
 const SAMPLE_ROWS = 10;
 
@@ -31,6 +32,8 @@ const state = {
     nextOffset: null,
     runsOffset: 0,
     nextRunsOffset: null,
+    deadLettersOffset: 0,
+    nextDeadLettersOffset: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -240,6 +243,7 @@ const LOADERS = {
     vinculacion: () => loadLinkingFilters(),
     vinculos: () => loadLinksView(),
     corridas: () => loadRunsView(),
+    fallas: () => loadDeadLettersView(),
 };
 
 function switchView(name) {
@@ -853,6 +857,73 @@ async function loadRuns(offset, quiet = false) {
     $('btn-next-runs').disabled = page.next_offset === null;
 }
 
+// --- Fallas definitivas (tablero de RF-25) -------------------------------------------------
+
+async function loadDeadLettersView() {
+    const stores = await api('GET', '/stores');
+    setOptions($('fallas-tienda'), [
+        { value: '', label: 'Todas las tiendas' },
+        ...stores.map((s) => ({ value: s.id, label: s.id })),
+    ]);
+    await loadDeadLetters(0);
+    startPolling(() => loadDeadLetters(state.deadLettersOffset, true));
+}
+
+function deadLetterStatus(failure) {
+    if (failure.reviewed_at) return [`Revisada ${fmtDate(failure.reviewed_at)}`, 'muted'];
+    if (failure.link_state === 'error') return ['Esperando revisión', 'bad'];
+    return ['Sin revisar', 'warn'];
+}
+
+async function loadDeadLetters(offset, quiet = false) {
+    const page = await api('GET', '/deadletters', {
+        query: {
+            store: $('fallas-tienda').value,
+            pending_only: $('fallas-pendientes').checked,
+            limit: DEAD_LETTERS_PAGE_SIZE,
+            offset,
+        },
+        quiet,
+    });
+    state.deadLettersOffset = offset;
+    state.nextDeadLettersOffset = page.next_offset;
+    fillBody(
+        $('table-fallas'),
+        page.items.map((failure) => {
+            const [label, cls] = deadLetterStatus(failure);
+            const canResume = failure.link_state === 'error' && !failure.reviewed_at;
+            return h(
+                'tr',
+                {},
+                td(fmtDate(failure.created_at)),
+                td(`#${failure.link_id}`),
+                td(failure.store_id),
+                td(failure.item_id),
+                td(failure.sku),
+                tdNum(failure.quantity),
+                td(failure.http_status === null ? '—' : String(failure.http_status)),
+                h('td', { title: failure.response || null }, shorten(failure.response, 80) || '—'),
+                td(h('span', { class: cls }, label)),
+                td(canResume ? button('Reanudar', () => resumeDeadLetter(failure), 'secondary') : ''),
+            );
+        }),
+        $('fallas-pendientes').checked ? 'No hay fallas sin revisar.' : 'Todavía no hay fallas.',
+    );
+    $('current-fallas-page').textContent = String(Math.floor(offset / DEAD_LETTERS_PAGE_SIZE) + 1);
+    $('btn-prev-fallas').disabled = offset === 0;
+    $('btn-next-fallas').disabled = page.next_offset === null;
+}
+
+async function resumeDeadLetter(failure) {
+    try {
+        await api('POST', `/links/${Number(failure.link_id)}/resume`);
+        toast(`Vínculo #${failure.link_id} reanudado: se vuelve a publicar su stock deseado.`);
+    } catch {
+        return;
+    }
+    await guard(() => loadDeadLetters(state.deadLettersOffset))();
+}
+
 // --- Inicio -------------------------------------------------------------------------------
 
 function init() {
@@ -887,6 +958,16 @@ function init() {
     $('btn-next-runs').addEventListener(
         'click',
         guard(() => loadRuns(state.nextRunsOffset)),
+    );
+    $('fallas-tienda').addEventListener('change', guard(() => loadDeadLetters(0)));
+    $('fallas-pendientes').addEventListener('change', guard(() => loadDeadLetters(0)));
+    $('btn-prev-fallas').addEventListener(
+        'click',
+        guard(() => loadDeadLetters(Math.max(0, state.deadLettersOffset - DEAD_LETTERS_PAGE_SIZE))),
+    );
+    $('btn-next-fallas').addEventListener(
+        'click',
+        guard(() => loadDeadLetters(state.nextDeadLettersOffset)),
     );
     guard(restoreSession)();
 }

@@ -18,6 +18,7 @@ from ivostock.api_models import (
     ApproveIn,
     ApproveOut,
     AvailableStore,
+    DeadLettersPage,
     DisableOut,
     ErrorOut,
     LinkOffOut,
@@ -302,3 +303,26 @@ def list_runs(
     if provider is not None:
         services.require_provider(engine, provider, active=False)
     return services.list_runs(engine, provider, limit, offset)
+
+
+# --- Fallas definitivas (tablero de RF-25) ---------------------------------------------------------
+
+
+@router.get(
+    "/deadletters",
+    response_model=DeadLettersPage,
+    tags=["links"],
+    summary="Listar fallas definitivas",
+    description="Dead letters (RF-19), la más reciente primero, con la publicación y el estado "
+    "actual del vínculo. Un vínculo en `error` se reanuda con `POST /links/{id}/resume`, que marca "
+    "sus fallas como revisadas. Para la página siguiente usar `next_offset`.",
+)
+def list_dead_letters(
+    store: OptionalStore = None,
+    pending_only: Annotated[
+        bool, Query(description="Sólo las que todavía no se revisaron")
+    ] = False,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0, le=10_000_000)] = 0,
+):
+    return services.list_dead_letters(database(), store, pending_only, limit, offset)

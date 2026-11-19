@@ -255,3 +255,28 @@ class RunSummary(BaseModel):
     failed: int
     interrupted: int
     running: int
+
+
+# --- Fallas definitivas ------------------------------------------------------------------------
+
+
+class DeadLetterOut(BaseModel):
+    id: int
+    link_id: int
+    store_id: str
+    item_id: str
+    sku: str
+    link_state: Literal["active", "error", "inactive"] = Field(
+        description="Estado actual del vínculo: `error` mientras espera revisión"
+    )
+    revision: int
+    quantity: int = Field(description="Cantidad que no se pudo publicar")
+    http_status: int | None = Field(description="Código HTTP; nulo si no hubo respuesta")
+    response: str = Field(description="Respuesta del marketplace, recortada a 300 caracteres")
+    created_at: datetime
+    reviewed_at: datetime | None = Field(description="Cuándo se reanudó el vínculo; nulo si no")
+
+
+class DeadLettersPage(BaseModel):
+    items: list[DeadLetterOut]
+    next_offset: int | None = Field(description="Offset de la página siguiente; None en la última")
