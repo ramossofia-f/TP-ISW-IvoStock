@@ -1,7 +1,8 @@
 # Verificación del detector global de normalidad
 
 Fecha: 17/11/2026. Rama local `feat/ml-inferencia-monitoreo`, base `1260c81`.
-Comprobación de los cambios del worktree antes de crear un commit o ejecutar CI remoto.
+La primera comprobación corresponde a los cambios del worktree antes de crear un commit o
+ejecutar CI remoto. La corrección posterior a la revisión del PR #18 se registra al final.
 Diseño: [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md).
 
 ## Entorno y aislamiento
@@ -58,10 +59,38 @@ En el host Windows, la suite sin integración aprobó 131 pruebas y encontró do
 la expectativa de permisos POSIX 0600 y la comparación LF frente a CRLF. Ambas pasan en Docker.
 Tres pruebas nuevas de privacidad y la del aviso también pasaron en el host.
 
-No se ejecutó CI remoto para estos cambios, una ventana de uptime de 24 horas ni una evaluación
-del nuevo modelo con incidentes reales etiquetados. El aviso se comprobó ejecutando su JavaScript
+En esa primera comprobación aún no se había ejecutado CI remoto. Tampoco se ejecutaron una ventana
+de uptime de 24 horas ni una evaluación con incidentes reales etiquetados. El aviso se comprobó ejecutando su JavaScript
 con un DOM de prueba; no se hizo una inspección visual en navegador. El calentamiento se probó
 por disparos controlados; no se esperaron diez intervalos automáticos de cinco horas.
 
 La [demostración del décimo aceptado](ENTREGA-3-ML-PENDIENTES.md) queda pendiente para el video
 de la Entrega 3. La publicación asíncrona de esa versión debe observarse antes de mostrar ML decidiendo.
+
+## Corrección tras revisión del PR #18 (17/11/2026)
+
+Se restablece RF-13: cuarentena si guarda o ML. La guarda p>0,5 se evalúa primero y no puede ser
+omitida por un modelo, aprobación ni replay. Si rechaza no se consulta ML: se registra
+`guard_accepted=false`, origen `rules`, sin versión, puntaje ni motivo de respaldo. ML sólo agrega
+cuarentenas a los feeds que pasan la guarda; arranque y caídas conservan la operación por reglas.
+El ADR-0016 queda propuesto, pendiente de revisión de los tres integrantes.
+
+| Comprobación ejecutada para la corrección | Resultado |
+|---|---|
+| Suite completa Docker en `ivostock-ml-check`, mismo override sin puertos | **300 aprobadas, una omitida**, en 245,64 s; un aviso de deprecación de `TestClient` |
+| Cliente de inferencia en el host, `pytest -q tests/ml/test_client.py` | 22 aprobadas: combinaciones guarda/ML, umbral, ausencia de consulta tras rechazo, timeout y respaldo |
+| Aviso de interfaz en el host, `pytest -q tests/ml/test_notice.py` | Una aprobada con Node.js; cubre la prueba omitida en Docker |
+| Ruff, documentación, secretos, sintaxis JavaScript y `git diff --check` | Aprobados |
+| Evaluación reproducida con `python scripts/ml_evaluar_normalidad.py` | Agrega guarda o ML; mismo hash de datos y versión, 8 % falsas cuarentenas estables y 81 % detección de truncamientos leves |
+
+La suite completa incluye dos regresiones por HTTP/PostgreSQL/S3 con modelo listo y respuesta
+de inferencia permisiva preparada: tanto un feed vacío como uno con ceros masivos se retienen por
+la guarda sin llegar a consultar ML. Se conserva el inventario y el stock publicado, sin evento
+nuevo, tareas ni observación de aprendizaje. Se mantienen las pruebas de cuarentena adicional de
+ML, publicación, recuperación de pendientes, privacidad y cierres abruptos.
+
+Los checks e integración de CI del commit anterior `5911066` estaban aprobados al consultar
+GitHub; no se atribuyen a esta corrección. Los nuevos checks se disparan al actualizar el PR.
+La evaluación no acredita una mejora sobre la logística ni su presupuesto de falsas cuarentenas:
+los conjuntos y variables anteriores difieren. Mantener la guarda conserva sus rechazos y no
+reduce las falsas cuarentenas que agrega ML. La calidad y elección del modelo esperan revisión.

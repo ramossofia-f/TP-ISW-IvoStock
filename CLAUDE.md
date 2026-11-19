@@ -19,11 +19,12 @@ El [PRD](docs/prd/PRD.md) define el producto; el [SRD](docs/srd/SRD.md), su dise
 - Agregar decisiones estructurales como ADRs breves con alternativas y consecuencias.
 - Mantener alcance, comandos y resultados medidos coherentes. No declarar pruebas que no se ejecutaron.
 - Métricas: reutilizar `services.monitor`, el reporte de ML y los heartbeats; sólo `metrics.sample` escribe muestras por minuto, con retención de siete días. API y servicio de métricas comparten `api_metrics`. El observador sólo hace GET, sin persistencia ni alertas (ADR-0017). Los percentiles son por revisión y efecto externo, nunca por intento HTTP.
-- ML usa un detector global de normalidad (ADR-0016), con reglas de respaldo. Sólo los aceptados
+- ML implementa un detector global de normalidad (ADR-0016 propuesto). La guarda p>0,5 es
+  obligatoria: se evalúa primero; ML sólo suma cuarentenas, nunca las libera. Sólo los aceptados
   generan observaciones durables; publicar un modelo y confirmar su aprendizaje es atómico.
   El servicio de inferencia y el entrenador son independientes; las métricas de ML quedan en
-  el backend y en Monitoreo técnico, separado de los recorridos de usuario. El experimento del
-  ADR-0015 se conserva únicamente como histórico.
+  el backend y en Monitoreo técnico, separado de los recorridos de usuario. Los ADR-0015 y
+  ADR-0016 siguen propuestos, pendientes de revisión conjunta del equipo.
 - Monitoreo corresponde a administración de plataforma. El TP comparte un único perfil entre
   las cuentas precreadas y por eso todas acceden a la pestaña; es una simplificación documentada,
   sin implementar RBAC. Las pantallas de negocio no muestran la infraestructura ni el modelo.
