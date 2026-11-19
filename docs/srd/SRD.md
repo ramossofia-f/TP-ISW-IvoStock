@@ -59,7 +59,7 @@ Alembic instala el esquema. Un índice único parcial sobre publicación/tienda 
 
 ### Modelo de datos
 
-Los diagramas reflejan el esquema que instalan las migraciones `0001` a `0008`. Las líneas continuas son claves foráneas; las punteadas, relaciones que el código mantiene sin una clave foránea en la base. Todas las fechas son `timestamptz`. `PK` es clave primaria, `FK` foránea y `UK` única.
+Los diagramas reflejan el esquema que instalan las migraciones `0001` a `0009`; la `0009` sólo agrega índices sobre `publication_measurements`. Las líneas continuas son claves foráneas; las punteadas, relaciones que el código mantiene sin una clave foránea en la base. Todas las fechas son `timestamptz`. `PK` es clave primaria, `FK` foránea y `UK` única.
 
 Motor de sincronización:
 
