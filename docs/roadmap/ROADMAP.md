@@ -93,6 +93,16 @@ se descartó porque el equipo se suspendió 16 minutos durante la publicación; 
 script detecta suspensiones y no escribe el reporte si ocurren. El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
 detalla las comprobaciones ejecutadas y las limitaciones.
 
+### Ensayo de consultas (RNF-09)
+
+`scripts/ensayo_consultas.py` sigue el protocolo del SRD: cinco operadores autenticados, una
+consulta por segundo cada uno durante 30 minutos, 9.000 consultas con 50 % listados de cien
+vínculos, 25 % búsquedas de SKU y 25 % corridas y fallas, con carga abierta y latencia medida en el
+cliente desde el instante programado. Con el inventario real de Celesa, sobre 2.000 vínculos y con
+el motor publicando (dos ingestas y 2.835 publicaciones durante la medición), cumple RNF-09: p95 de
+18 ms, p99 de 20 ms y ninguna consulta con error. Detalle por tipo de consulta y recursos en el
+[reporte del ensayo](../entregas/ENSAYO-CONSULTAS-CELESA.md).
+
 ## Preparación de la presentación E2
 
 Guion sugerido de ocho minutos: problema y contrato (1), arquitectura y datos reales (1), ingesta y vinculación (2), cambio y confirmación (1), cuarentena/dead letter/reanudación (1), corte y recuperación (1), pruebas y límites demostrados (1). Usar los comandos y el reporte reales, ocultando secretos y sin mostrar inventario privado completo. Identificar el commit probado en `main` al presentar el enlace del video y conservar las contribuciones reales del equipo.
