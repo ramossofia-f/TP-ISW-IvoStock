@@ -57,6 +57,266 @@ La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostoc
 
 Alembic instala el esquema. Un índice único parcial sobre publicación/tienda impide más de un vínculo no desactivado. Las cantidades son enteros entre 0 y 2.147.483.647. Los SKU son cadenas. Los snapshots usan claves SHA-256 y escritura condicional: los bytes de una clave existente no se reemplazan. Tareas e intentos conservan la referencia de corrida; un corte o una reanudación manual puede tener referencia nula y se identifica por vínculo y revisión.
 
+### Modelo de datos
+
+Los diagramas reflejan el esquema que instalan las migraciones `0001` a `0009`; la `0009` sólo agrega índices sobre `publication_measurements`. Las líneas continuas son claves foráneas; las punteadas, relaciones que el código mantiene sin una clave foránea en la base. Todas las fechas son `timestamptz`. `PK` es clave primaria, `FK` foránea y `UK` única.
+
+Motor de sincronización:
+
+```mermaid
+erDiagram
+    providers ||--o{ runs : "ejecuta"
+    runs |o--o{ runs : "replay_of"
+    providers |o..o| runs : "last_accepted_run"
+    providers ||--o{ stock : "inventario vigente"
+    providers ||--o{ provider_preview : "validación del alta"
+    providers ||--o{ comparison_events : "aviso"
+    runs |o--o{ comparison_events : "origina"
+    stores ||--o{ catalog : "publicaciones importadas"
+    providers ||--o{ links : "abastece"
+    catalog ||--o{ links : "a lo sumo uno no inactivo"
+    links ||--o| tasks : "una pendiente"
+    runs |o--o{ tasks : "origina"
+    links ||--o{ attempts : "envíos"
+    runs |o--o{ attempts : "origina"
+    links ||--o{ dead_letters : "fallas definitivas"
+    attempts |o--o{ dead_letters : "evidencia"
+    links ||--o{ publication_measurements : "una por revisión"
+    stores ||--o{ publication_measurements : "agrupa"
+    stores ||..o{ market_calls : "cuota"
+
+    providers {
+        bigint id PK
+        text name UK
+        text url "nunca se devuelve"
+        text status
+        boolean active
+        timestamptz next_run_at
+        text last_error
+        bigint last_accepted_run
+    }
+    provider_preview {
+        bigint provider_id PK,FK
+        text sku PK
+        integer quantity "mayor o igual a 0"
+    }
+    runs {
+        bigint id PK
+        bigint provider_id FK
+        text status "running accepted quarantined failed interrupted"
+        text snapshot_key "SHA-256 en S3"
+        jsonb metrics "D Z p decisión de ML"
+        text error
+        bigint replay_of FK
+        timestamptz started_at
+        timestamptz finished_at
+    }
+    stock {
+        bigint provider_id PK,FK
+        text sku PK
+        integer quantity "mayor o igual a 0"
+    }
+    comparison_events {
+        bigint id PK
+        bigint provider_id FK
+        bigint run_id FK
+        timestamptz created_at
+        timestamptz processed_at
+    }
+    stores {
+        text id PK
+        text status
+        timestamptz blocked_until
+        text last_error
+        integer import_offset
+        integer import_total
+        timestamptz import_finished_at
+        timestamptz import_served_at
+    }
+    catalog {
+        text store_id PK,FK
+        text item_id PK
+        text sku
+        integer quantity "mayor o igual a 0"
+    }
+    links {
+        bigint id PK
+        bigint provider_id FK
+        text store_id FK
+        text item_id FK
+        text sku
+        text state "active error inactive"
+        boolean cut_requested
+        integer initial_confirmed
+        integer desired
+        integer confirmed
+        bigint revision
+        timestamptz last_success_at
+        text last_error
+        timestamptz created_at
+    }
+    tasks {
+        bigint link_id PK,FK
+        bigint revision
+        integer quantity
+        integer attempts
+        integer replacements
+        bigint run_id FK
+        timestamptz enqueued_at
+        timestamptz available_at
+        timestamptz claimed_until
+        bigint claimed_revision
+    }
+    attempts {
+        bigint id PK
+        bigint link_id FK
+        bigint revision
+        integer quantity
+        text status
+        integer http_status
+        text response
+        bigint run_id FK
+        timestamptz created_at
+        timestamptz finished_at
+    }
+    dead_letters {
+        bigint id PK
+        bigint link_id FK
+        bigint attempt_id FK
+        bigint revision
+        integer quantity
+        integer http_status
+        text response
+        timestamptz created_at
+        timestamptz reviewed_at
+    }
+    publication_measurements {
+        bigint link_id PK,FK
+        bigint revision PK
+        text store_id FK
+        timestamptz origin_at
+        timestamptz recorded_at
+        timestamptz effect_at
+        timestamptz confirmed_at
+        timestamptz superseded_at
+    }
+    market_calls {
+        text store_id
+        timestamptz at
+    }
+```
+
+Cuentas, aprendizaje y operación:
+
+```mermaid
+erDiagram
+    users ||--o{ sessions : "inicia"
+    users |o..o{ login_failures : "por nombre, exista o no"
+    ml_models ||--o| ml_state : "versión vigente"
+    ml_models |o--o{ ml_observations : "entrenada con"
+    runs ||--o| ml_observations : "una por aceptación"
+    providers ||--o{ ml_observations : "codificado en one-hot"
+
+    users {
+        bigint id PK
+        text username UK "a-z 0-9 . _ -"
+        text password_hash "PBKDF2"
+        boolean active
+        timestamptz created_at
+        timestamptz last_login_at
+    }
+    sessions {
+        text token_hash PK "SHA-256 del token"
+        bigint user_id FK "ON DELETE CASCADE"
+        timestamptz created_at
+        timestamptz expires_at
+    }
+    login_failures {
+        bigint id PK
+        text username
+        timestamptz at
+    }
+    ml_models {
+        text version PK
+        jsonb payload "modelo exportado sin pickle"
+        timestamptz created_at
+    }
+    ml_state {
+        integer id PK "siempre 1"
+        text active_version FK
+    }
+    ml_observations {
+        bigint run_id PK,FK
+        bigint provider_id FK
+        timestamptz accepted_at
+        jsonb features
+        text trained_version FK
+        timestamptz trained_at
+        integer attempts
+        timestamptz retry_at
+        text last_error
+    }
+    metric_samples {
+        timestamptz minute PK
+        jsonb payload "estado del minuto"
+    }
+    worker_heartbeats {
+        text name PK
+        timestamptz at
+    }
+```
+
+Simulador del marketplace, con tablas propias: el motor nunca las lee y sólo lo consulta por HTTP.
+
+```mermaid
+erDiagram
+    sim_stores ||--o{ sim_items : "publicaciones"
+    sim_items ||--o{ sim_publication_effects : "primer efecto por envío"
+    sim_items |o..o{ sim_faults : "fallas provocadas"
+    sim_stores ||..o{ sim_calls : "cuota"
+
+    sim_stores {
+        text id PK
+    }
+    sim_items {
+        text store_id PK,FK
+        text id PK
+        text sku
+        integer available_quantity "mayor o igual a 0"
+        bigint writes
+        timestamptz updated_at
+    }
+    sim_publication_effects {
+        text store_id PK,FK
+        text item_id PK,FK
+        text work_id PK "vínculo:revisión"
+        integer quantity
+        timestamptz effect_at
+    }
+    sim_faults {
+        text store_id PK
+        text item_id PK
+        integer status
+        integer remaining
+    }
+    sim_calls {
+        text store_id
+        timestamptz at
+    }
+```
+
+Reglas que impone la base y no sólo el código:
+
+| Regla | Mecanismo |
+|---|---|
+| Una publicación tiene a lo sumo un vínculo no inactivo | Índice único parcial `single_writer` sobre `links(store_id, item_id)` con `state <> 'inactive'` |
+| Una tarea pendiente por vínculo | `tasks.link_id` es clave primaria; una revisión nueva reemplaza a la anterior |
+| Una medición por revisión y una observación de ML por corrida | Claves primarias `(link_id, revision)` y `run_id` |
+| Cantidades no negativas | `CHECK (quantity >= 0)` en `catalog`, `stock`, `provider_preview`, `tasks` y `sim_items`; también `desired`, `confirmed` e `initial_confirmed` en `links` |
+| Estados de un vínculo | `CHECK (state IN ('active', 'error', 'inactive'))` |
+| Nombres únicos | `UNIQUE` en `providers.name` y `users.username`; el formato del usuario además se valida con `CHECK` |
+| Un único modelo vigente | `ml_state` admite una sola fila (`CHECK (id = 1)`) |
+
 La ingesta adquiere un advisory lock de sesión por proveedor, descarga, almacena el snapshot y registra su referencia. Después normaliza y evalúa el inventario. El reemplazo de stock, resultado aceptado y evento de comparación comparten una transacción. Se usa una tabla temporal con COPY y ANALYZE; sólo se actualizan cantidades distintas y los ausentes se eliminan mediante anti-join indexado. Un snapshot almacenado sin aceptación no cambia stock ni genera tareas. La siguiente corrida identifica registros abandonados como interrumpidos.
 
 Una descarga idéntica al último snapshot aceptado reutiliza el inventario vigente; registra la corrida y conserva un evento durable de comparación. La guarda se calcula cuando cambia el snapshot. Los descartes de duplicados identifican la ocurrencia sustituida y nunca la fila ganadora.
