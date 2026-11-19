@@ -71,13 +71,16 @@ El comparador toma el mismo lock por proveedor. Lee su inventario vigente y los 
 
 ## Validación y aprendizaje de normalidad
 
-El [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md) sustituye el diseño binario
-del ADR-0015. Después de parsear y calcular D/Z/p, la ingesta llama al servicio privado
+El [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md) plantea el diseño
+de normalidad implementado y espera revisión de los tres integrantes; conserva la guarda
+obligatoria del ADR-0015. Después de parsear y calcular D/Z/p, la ingesta pone en cuarentena si
+p>0,5, sin consultar ML. Sólo si pasa la guarda, llama al servicio privado
 `ivostock.ml.api` con el ID estable del proveedor y siete estadísticas: `rows`, `sku`, número de
 `discarded`, `parse_error_rate`, `D`, `Z`, `p`. No envía archivos, claves de snapshot ni URLs.
 El plazo de la petición completa es un segundo, sin reintentos. El servicio usa la versión
 publicada antes de esta aceptación. Si falta historial, hay timeout o falla el servicio/modelo,
-la ingesta aplica p>0,5 y conserva el motivo del respaldo. Con ML listo, su decisión es principal.
+la guarda decide sola y se conserva el motivo del respaldo. Con ML listo, la cuarentena es
+guarda o ML: el modelo sólo puede sumar cuarentenas, nunca liberar lo que frena la guarda.
 
 El modelo es OneClassSVM RBF con nu=0,05 y gamma=scale. Los conteos se transforman con log1p,
 las variables numéricas se estandarizan con media y varianza ponderadas y el proveedor se agrega
@@ -88,7 +91,9 @@ inválidos. Un proveedor sólo se evalúa con una versión que incluya al menos 
 
 Aceptar conserva en una transacción inventario, corrida, evento y `ml_observations`; poner en
 cuarentena no conserva observación ni genera evento. `runs.metrics.ml` guarda decisión, origen,
-versión, puntaje y motivo del respaldo. `RunOut` excluye ese objeto de los recorridos de negocio.
+versión, puntaje, `guard_accepted` y motivo del respaldo. Si rechaza la guarda, el origen es
+`rules`, `guard_accepted=false` y versión, puntaje y motivo del respaldo son nulos: no hubo
+consulta ML ni se presume una caída. `RunOut` excluye ese objeto de los recorridos de negocio.
 El diagnóstico técnico se consulta por backend y por Monitoreo, con la excepción de permisos
 del TP documentada más abajo.
 La aceptación confirmada es el único origen de observaciones nuevas. No hay backfill automático.
@@ -124,7 +129,7 @@ del entrenador. No se atribuye precisión en línea sin etiquetas independientes
 La API de operadores añade `quarantine_run_id` al proveedor activo si existe una cuarentena
 posterior a su última aceptación. La app actualiza un aviso global cada cinco segundos durante
 la sesión, usando sólo proveedor/corrida. Se retira después de una aceptación posterior o baja.
-El puntaje fijo p conserva el significado de respaldo; no representa la decisión de ML.
+El puntaje fijo p representa la guarda obligatoria; no representa la decisión de ML.
 
 ## Cola y concurrencia
 

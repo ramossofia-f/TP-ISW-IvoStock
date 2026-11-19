@@ -47,18 +47,20 @@ Del tramo siguiente ya están el tablero de corridas y la búsqueda de sugerenci
 
 ### Plan del tramo 11/11–17/11 (ML)
 
-El experimento binario del [ADR-0015](../adr/0015-detector-de-feeds-anomalos.md) fue sustituido el
-17/11 por el [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md): un modelo global
-de normalidad que aprende de aceptados, decide con reglas de respaldo y reentrena mediante outbox.
+El [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md) implementa un
+modelo global de normalidad que aprende de aceptados y reentrena mediante outbox. Espera revisión
+de los tres integrantes para reemplazar el modelo binario del [ADR-0015](../adr/0015-detector-de-feeds-anomalos.md).
+Se mantienen la guarda obligatoria y su rol monótono: cuarentena si guarda o ML, sin omisiones.
 Se conserva el reparto de contribuciones; las cifras del modelo anterior son evidencia histórica.
 
 | Parte | Resultado verificable | Autor | Revisa |
 |---|---|---|---|
 | Experimento anterior: datos y entrenamiento | Generador, variables, conjunto reproducible, modelo binario y evaluación conservados como histórico | Sofía Ramos | Francisco Ortega |
-| Diseño vigente: normalidad e integración | Modelo global OneClassSVM, servicio privado, aprendizaje durable, versiones reproducibles, diagnóstico interno y aviso de cuarentena | Francisco Ortega | Sofía Ramos |
+| Implementación propuesta: normalidad e integración | Modelo global OneClassSVM adicional a la guarda, servicio privado, aprendizaje durable, versiones reproducibles, diagnóstico interno y aviso de cuarentena; ADR pendiente de revisión conjunta | Francisco Ortega | Sofía Ramos |
 
 Implementación verificada localmente en el [registro del detector](../entregas/ML-NORMALIDAD-VERIFICACION.md):
-289 pruebas Python aprobadas en Docker y aviso comprobado con Node.js en el host. La
+300 pruebas Python aprobadas en Docker tras restablecer la guarda obligatoria y aviso comprobado
+con Node.js en el host. La
 [evaluación sintética vigente](../entregas/ML-NORMALIDAD-EVALUACION.md) declara detecciones y falsas
 cuarentenas. Pendientes integración en la rama de entrega, revisión del equipo y CI remoto.
 
@@ -76,7 +78,8 @@ de efecto externo se calculan por tienda, separados de disponibilidad. Diseño y
 UptimeRobot en el [ADR-0017](../adr/0017-metricas-y-observador.md).
 
 La campaña real de 24 horas queda pendiente. La instrumentación no se declara como evidencia de
-haber cumplido los umbrales.
+haber cumplido los umbrales. El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
+detalla las comprobaciones ejecutadas y las limitaciones.
 
 ### Ensayo de dos tiendas (RNF-02 y RNF-15)
 
@@ -88,8 +91,7 @@ sintético, p95 de 16,0 y p99 de 17,0. Resultados, cambios por corrida y recurso
 [con Celesa](../entregas/ENSAYO-DOS-TIENDAS-CELESA.md) y
 [con el feed sintético](../entregas/ENSAYO-DOS-TIENDAS-SINTETICO.md). Un primer ensayo con Celesa
 se descartó porque el equipo se suspendió 16 minutos durante la publicación; desde entonces el
-script detecta suspensiones y no escribe el reporte si ocurren. El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
-detalla las comprobaciones ejecutadas y las limitaciones.
+script detecta suspensiones y no escribe el reporte si ocurren.
 
 ## Preparación de la presentación E2
 
