@@ -81,11 +81,14 @@ haber cumplido los umbrales.
 ### Ensayo de dos tiendas (RNF-02 y RNF-15)
 
 `scripts/ensayo_dos_tiendas.py` mide dos tiendas sanas y sin cola previa con 1.000 vínculos cada
-una, con los workers reales y la cuota real. Con el feed sintético, ambas cumplen RNF-02: en la
-corrida de carga máxima (1.000 cambios por tienda) el p95 fue de 16,0 minutos y el p99 de 17,0, sin
-pendientes ni duraciones desconocidas. Resultados, cambios por corrida y recursos en el
-[reporte del ensayo](../entregas/ENSAYO-DOS-TIENDAS-SINTETICO.md). Falta repetirlo con el
-inventario real de Celesa. El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
+una, con los workers reales y la cuota real. Ambas cumplen RNF-02 en la corrida de carga máxima
+(1.000 cambios por tienda), sin pendientes ni duraciones desconocidas: con el inventario real de
+Celesa (255.129 SKU) el p95 fue de 15,1 y 16,0 minutos y el p99 de 16,1 y 16,2; con el feed
+sintético, p95 de 16,0 y p99 de 17,0. Resultados, cambios por corrida y recursos en los reportes
+[con Celesa](../entregas/ENSAYO-DOS-TIENDAS-CELESA.md) y
+[con el feed sintético](../entregas/ENSAYO-DOS-TIENDAS-SINTETICO.md). Un primer ensayo con Celesa
+se descartó porque el equipo se suspendió 16 minutos durante la publicación; desde entonces el
+script detecta suspensiones y no escribe el reporte si ocurren. El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
 detalla las comprobaciones ejecutadas y las limitaciones.
 
 ## Preparación de la presentación E2
