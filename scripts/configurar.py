@@ -65,6 +65,13 @@ def main():
         "LOGIN_MAX_ATTEMPTS": "5",
         "LOGIN_WINDOW_MINUTES": "15",
         "MARKETPLACE_STORES": "T1,T2",
+        "ML_URL": "http://ml:8002",
+        "ML_TOKEN": secrets.token_hex(24),
+        "ML_MIN_RUNS": "10",
+        "ML_HISTORY_PER_PROVIDER": "200",
+        "ML_HALF_LIFE_DAYS": "7",
+        "ML_NU": "0.05",
+        "ML_RETRY_SECONDS": "30",
     }
     operators_created = "OPERATOR_ACCOUNTS" not in current
     if operators_created:

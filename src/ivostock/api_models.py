@@ -89,6 +89,9 @@ class ProviderOut(BaseModel):
     next_run_at: datetime | None
     last_accepted_run: int | None
     last_error: str | None
+    quarantine_run_id: int | None = Field(
+        None, description="Última cuarentena posterior a la última aceptación; sólo si está activo"
+    )
 
 
 class DisableOut(BaseModel):
@@ -218,7 +221,7 @@ class RunMetrics(BaseModel):
     reused_inventory: bool | None = None
     D: float | None = Field(None, description="Fracción de SKU de la corrida previa que ya no figura")
     Z: float | None = Field(None, description="Fracción de SKU con stock que pasó a cero")
-    p: float | None = Field(None, description="Sospecha de 0 a 1; mayor que 0,5 manda la corrida a cuarentena")
+    p: float | None = Field(None, description="Puntaje de reglas; decide sólo al usar el respaldo")
 
 
 class RunOut(BaseModel):

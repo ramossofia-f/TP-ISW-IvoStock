@@ -124,7 +124,61 @@ uv run python -m ivostock.generador.feeds --salida data/feeds/demo.csv --skus 10
 uv run python -m ivostock.generador.feeds --base data/feeds/demo.csv --salida data/feeds/truncado.csv --truncar 0.3 --semilla 7
 ```
 
-También permite `--ceros`, `--corruptas` y `--deriva`, como fracciones entre cero y uno. La salida conserva el encabezado fijo `SKU;stock`; los archivos locales son entradas de preparación y generación, y los proveedores se consultan siempre por HTTP.
+También permite `--ceros`, `--corruptas`, `--deriva` y `--bajas` (SKU dispersos que dejan de figurar), como fracciones entre cero y uno. La salida conserva el encabezado fijo `SKU;stock`; los archivos locales son entradas de preparación y generación, y los proveedores se consultan siempre por HTTP.
+
+### Detector global de normalidad (ML)
+
+El componente implementado ([ADR-0016 propuesto](docs/adr/0016-normalidad-global-y-aprendizaje-durable.md)) aprende
+únicamente de corridas aceptadas: OneClassSVM RBF, proveedor one-hot y siete estadísticas ya
+calculadas por ingesta. `ml` sirve la inferencia en Python puro; `ml-train` instala sklearn y
+reentrena en segundo plano. `make up` inicia ambos, sin esperar a reunir el historial.
+
+La guarda fija es obligatoria: p>0,5 pone en cuarentena sin consultar ML. Si pasa, el modelo
+puede agregar cuarentenas una vez que su versión incorpore diez aceptados del proveedor.
+Cuarentena = guarda o ML; ningún modelo, aprobación ni replay omite la guarda. Durante el
+calentamiento o si ML no responde en un segundo total, decide sólo la guarda. Aceptar
+deja una observación durable, incluso cuando no se pudo consultar al modelo. El
+entrenamiento no demora la publicación. Una caída conserva el modelo anterior y los pendientes.
+Al recuperar se procesa cada observación una vez; una cuarentena nunca entrena.
+
+La ventana contiene hasta 200 aceptados procesados por proveedor, con semivida de siete días.
+Configurar `ML_MIN_RUNS`, `ML_HISTORY_PER_PROVIDER`, `ML_HALF_LIFE_DAYS`, `ML_NU` y
+`ML_RETRY_SECONDS` antes de entrenar una nueva versión. `configurar.py` agrega `ML_URL` y el
+secreto `ML_TOKEN` sin sobrescribir configuración existente. No hay backfill automático.
+
+Diagnóstico de backend y reproducción (usar la versión que devuelve `ml-report`):
+
+```sh
+docker compose run --rm cli ivostock ml-report
+docker compose run --rm --build ml-train ivostock ml-reproduce VERSION --output data/ml/reproduced.json
+```
+
+La reproducción comprueba el hash de la versión, no la activa y necesita las mismas versiones de
+bibliotecas registradas. Si se quiere conservar el archivo en el host, agregar
+`-v "./data:/work/data"` a `docker compose run`. Las versiones y observaciones residen en PostgreSQL
+y forman parte de su respaldo; no se escriben en Git. Los recorridos de negocio sólo agregan un
+aviso de cuarentena, sin puntajes ni versiones. El diagnóstico queda en `ml-report` y en la
+superficie de administración Monitoreo técnico, con la simplificación de permisos indicada abajo.
+
+ML expone `http://localhost:8002/health/live` (proceso y esquema), `/health`
+(inferencia lista; 503 durante el calentamiento) y `/health/training` (heartbeat reciente del
+entrenador). Métricas consulta los dos primeros y reutiliza el heartbeat del entrenador;
+el observador externo consulta ese estado. `ML_HOST_PORT` cambia el puerto local. Compose comprueba sólo `/health/live` para que
+el arranque pueda terminar antes del calentamiento. El motor por respaldo no cuenta como uptime
+de ML. `POST /classify` es interno y requiere `ML_TOKEN`; no recibe CSV, URLs ni credenciales.
+
+Un aceptado se asume sano: esto puede reforzar errores y rechazar novedades legítimas. Alteraciones
+de cantidades positivas que no cambien las siete estadísticas quedan fuera del alcance. La
+evaluación sintética del diseño vigente se reproduce con
+`uv run --group ml python scripts/ml_evaluar_normalidad.py`; el [reporte](docs/entregas/ML-NORMALIDAD-EVALUACION.md)
+declara falsas cuarentenas y detecciones sobre escenarios reservados. La
+[evaluación anterior](docs/entregas/ML-EVALUACION.md), `scripts/ml_entrenar.py` y su `modelo.json`
+pertenecen al experimento binario histórico y no activan ni evalúan el detector implementado.
+El ADR-0016 queda propuesto hasta que lo revisen los tres integrantes; la calidad del detector
+sigue bajo revisión y no se acredita una mejora respecto de la logística con ensayos distintos.
+
+El [registro de verificación](docs/entregas/ML-NORMALIDAD-VERIFICACION.md) separa las comprobaciones
+de modelo, circuito, recuperación, privacidad y avisos de los ensayos todavía no realizados.
 
 ## Recorrido de demostración
 
@@ -193,6 +247,94 @@ docker compose run --rm cli ivostock replay ID_CORRIDA
 
 La ingesta automática ocurre cada 300 minutos, empezando 300 minutos después del alta, y no se superpone por proveedor. Los comandos manuales no cambian el próximo vencimiento; `schedule-now` lo adelanta. Las lecturas y escrituras comparten sesenta llamadas/minuto por tienda; reiniciar conserva el consumo.
 
+## Métricas y observador de disponibilidad
+
+`make up` también levanta `metrics` en `http://localhost:8004`. El servicio toma una muestra por
+minuto y conserva siete días en PostgreSQL. Usa las consultas de operación y heartbeats existentes;
+continúa funcionando si se detiene la API principal. La pestaña **Monitoreo** de la aplicación
+muestra disponibilidad, heartbeats y p95/p99 de publicación por tienda como valores numéricos.
+No hay alertas ni notificaciones. Decisión y alternativas: [ADR-0017](docs/adr/0017-metricas-y-observador.md).
+
+Monitoreo es una herramienta del administrador de la plataforma. Para este TP las cuentas
+precreadas comparten un único perfil y todas ven la pestaña y sus consultas autenticadas. Esta
+visibilidad es una simplificación de la demostración; no hay RBAC ni un rol administrador separado.
+Los recorridos de usuario muestran las tareas de negocio y sus resultados. En un producto con
+perfiles separados, tanto Monitoreo como `/metrics/*` deben quedar reservados a administración.
+
+La sección **Componente ML** distingue servicio activo, inferencia lista y entrenador activo;
+también muestra versión, historial incorporado por proveedor, mínimo de observaciones y
+aprendizajes pendientes. Reutiliza los health y el reporte del PR #18: un proceso activo con
+inferencia en cero puede estar en calentamiento. Operar con reglas de respaldo mantiene al motor
+disponible, pero no se contabiliza como inferencia disponible. Estos datos quedan en el histórico
+por minuto; no se entrenan modelos ni se generan corridas para observarlos.
+
+Con un Bearer de operador (el mismo de la API):
+
+```sh
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8004/metrics/current
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8004/metrics/summary
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8004/metrics/history
+```
+
+`current` entrega la última muestra, su antigüedad y los heartbeats actuales. `summary` informa
+las últimas 24 horas completas, con 1.440 posiciones esperadas; incluye faltantes en el denominador
+y separa API de motor. `history` entrega las muestras individuales. `start` y `end` permiten elegir
+un período de hasta siete días: ISO-8601 con zona horaria, minutos completos, inicio inclusivo y
+fin exclusivo. No se puede incluir un minuto futuro o todavía incompleto. Los tres endpoints
+también están en el puerto 8000 y las lecturas no generan muestras.
+
+El health de los workers mantiene la tolerancia de 660 segundos que permite una ingesta larga;
+una caída puede tardar ese tiempo en verse en su disponibilidad. El health HTTP de la API no
+prueba por sí mismo el funcionamiento del navegador. El estado del proceso de métricas se
+consulta sin sesión en `/health`; para saber la frescura de sus datos se usa `current` con sesión.
+
+El observador es otro microservicio, opcional y sin PostgreSQL ni volúmenes:
+
+```sh
+docker compose --profile observer up -d --build observer
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8003/metrics
+```
+
+Cada GET consulta el estado interno y su resumen y comprueba los health HTTP de API, simulador y
+proveedor. Devuelve JSON, sin acciones de negocio ni persistencia. No inicia sesión por el usuario:
+reenvía el Bearer al servicio de métricas. El único login es `POST /auth/login` en la API principal
+(puerto 8000); métricas sólo valida esa sesión y expone `GET /auth/me`. Si la API cae, un token
+vigente sigue sirviendo para consultar métricas; renovar una sesión vencida requiere que vuelva
+la API. La sesión vence a los 480 minutos por defecto; su vencimiento no interrumpe el muestreo
+interno ni pierde el histórico de la campaña de 24 horas.
+
+Para ejecutarlo en otra máquina, configurar `METRICS_URL`, `API_URL`, `SIMULATOR_URL` y
+`PROVIDER_URL`, y `ML_URL` para las sondas de ML, y ejecutar
+`uv run uvicorn ivostock.observer:app --host 0.0.0.0 --port 8003`.
+Las direcciones deben ser accesibles desde allí: los puertos locales de Compose están ligados
+a `127.0.0.1` y no se publican automáticamente a Internet. Dentro del perfil Compose las variables
+equivalentes son `OBSERVER_METRICS_URL`, `OBSERVER_API_URL`, `OBSERVER_SIMULATOR_URL` y
+`OBSERVER_PROVIDER_URL` y `OBSERVER_ML_URL`. El perfil local comparte máquina y red; no se presenta como observación
+desde un host independiente.
+
+Los p95/p99 se calculan desde el origen de cada revisión hasta el primer efecto externo que
+registra el simulador. No son tiempos de intentos HTTP ni promedios de percentiles. Cada tienda
+incluye su tamaño de muestra, pendientes, reemplazos y duraciones desconocidas; sin muestras,
+los percentiles son `null`. Un valor bajo mientras faltan publicaciones no acredita RNF-02.
+Los vínculos existentes al migrar no reciben una fecha de creación inventada. La instrumentación
+de revisión del simulador conserva el primer efecto aunque se pierda su acuse y se repita el envío.
+La migración `0009` reemplaza el índice de tienda/registro por índices de las expresiones
+`COALESCE(origin_at, recorded_at)` y `COALESCE(confirmed_at, superseded_at)`, usadas por la ventana
+de publicación y la retención, respectivamente.
+
+Para RNF-07 mantener el sistema encendido 24 horas y consultar el observador cada minuto con una
+sesión vigente; el histórico lo persiste exclusivamente `metrics`. Al terminar, consultar
+`/metrics/summary?start=INICIO_ISO&end=FIN_ISO` y conservar el resultado de la ventana elegida como
+evidencia de entrega antes de que expire su retención. El observador no guarda archivos ni acredita
+su propia continuidad histórica. La campaña de 24 horas sigue pendiente de ejecución;
+las pruebas automatizadas no la sustituyen.
+
+Para fijar una ventana única que conserve los cortes de un equipo que se reinicia, usar
+`scripts/medir_disponibilidad.py start` y, al terminar, `report`. El comando guarda las fechas y
+exporta resumen e histórico sin sobrescribir evidencia. La [preparación del laboratorio](docs/entregas/RNF07-LABORATORIO.md)
+detalla el inicio límite del 22/11, la recuperación y el tratamiento del apagado diario. Los
+reportes de las otras mediciones están en los PR #21 y #25; RNF-07 sigue pendiente de ejecución.
+
 ## Pruebas
 
 ```sh
@@ -208,4 +350,4 @@ La integración crea y limpia exclusivamente `ivostock_test` y usa `snapshots-te
 
 El ensayo real y la interrupción del servicio PostgreSQL se ejecutan con `uv run python scripts/evaluar_poc.py --source "RUTA_AL_ORIGINAL" --captured-at "FECHA_DEL_ARCHIVO"`. Ese ensayo detiene temporalmente API y workers del proyecto, conserva los volúmenes y deja un reporte en `data/evidencia/poc.json`. Usa un proveedor y una tienda de ensayo identificados por ejecución.
 
-El [registro de E2](docs/entregas/ENTREGA-2.md) separa resultados locales comprobados de ensayos pendientes. Las pruebas largas de disponibilidad, capacidad de interfaz y dos tiendas corresponden al MVP. ML está pendiente de definición.
+El [registro de E2](docs/entregas/ENTREGA-2.md) separa resultados históricos de ensayos pendientes. Las pruebas largas de disponibilidad, capacidad de interfaz y dos tiendas corresponden al MVP. El diseño de ML implementado para revisión está en el ADR-0016 propuesto.

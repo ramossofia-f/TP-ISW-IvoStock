@@ -23,12 +23,14 @@
             <li><button type="button" class="nav-link" data-view="vinculos">Mis vínculos</button></li>
             <li><button type="button" class="nav-link" data-view="corridas">Corridas</button></li>
             <li><button type="button" class="nav-link" data-view="fallas">Fallas</button></li>
+            <li><button type="button" class="nav-link" data-view="monitoreo">Monitoreo</button></li>
             <li class="spacer"><span id="who"></span></li>
             <li><button type="button" class="nav-link" id="btn-logout">Cerrar sesión</button></li>
         </ul>
     </nav>
 
     <main id="app-content">
+        <div id="quarantine-notice" class="notice hidden" role="alert" aria-live="polite"></div>
         <section id="view-login" class="view">
             <h2>Acceso a Configuración</h2>
             <form id="form-login">
@@ -164,7 +166,7 @@
                         <tr>
                             <th>Corrida</th><th>Proveedor</th><th>Estado</th><th>Inicio</th><th>Fin</th>
                             <th>SKU</th><th>Filas descartadas</th><th>Errores de parseo</th>
-                            <th>Sospecha</th><th>Detalle</th>
+                            <th>Guarda fija</th><th>Detalle</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -176,7 +178,6 @@
                 <button type="button" id="btn-next-runs" disabled>Siguiente</button>
             </div>
         </section>
-
         <section id="view-fallas" class="view hidden">
             <h2>Fallas definitivas</h2>
             <p class="muted">Publicaciones que el marketplace rechazó de forma definitiva o que agotaron sus reintentos. El vínculo queda en error hasta que se reanuda: reanudarlo vuelve a publicar el último stock deseado y marca la falla como revisada. Se actualiza sola cada 5 segundos.</p>
@@ -200,6 +201,47 @@
                 <button type="button" id="btn-prev-fallas" disabled>Anterior</button>
                 <span id="current-fallas-page">1</span>
                 <button type="button" id="btn-next-fallas" disabled>Siguiente</button>
+            </div>
+        </section>
+
+        <section id="view-monitoreo" class="view hidden">
+            <h2>Monitoreo técnico</h2>
+            <p id="metricas-muestra"></p>
+            <h3>Disponibilidad · últimas 24 horas</h3>
+            <p id="metricas-periodo"></p>
+            <div class="table-wrap">
+                <table id="table-disponibilidad">
+                    <thead><tr><th>Componente</th><th>Muestras exitosas</th><th>Disponibilidad (%)</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <h3>Publicación por tienda · últimas 24 horas</h3>
+            <div class="table-wrap">
+                <table id="table-publicacion">
+                    <thead><tr><th>Tienda</th><th>Muestras</th><th>p95 (min)</th><th>p99 (min)</th><th>Sin confirmar</th><th>Duración desconocida</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <h3>Actividad de workers</h3>
+            <div class="table-wrap">
+                <table id="table-heartbeats">
+                    <thead><tr><th>Worker</th><th>Activo (1/0)</th><th>Último heartbeat</th><th>Antigüedad (s)</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <h3>Componente ML</h3>
+            <div class="table-wrap">
+                <table id="table-ml-estado">
+                    <thead><tr><th>Métrica</th><th>Valor</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <h3>Observaciones incorporadas al modelo por proveedor</h3>
+            <div class="table-wrap">
+                <table id="table-ml-proveedores">
+                    <thead><tr><th>Proveedor</th><th>Observaciones incorporadas</th></tr></thead>
+                    <tbody></tbody>
+                </table>
             </div>
         </section>
     </main>

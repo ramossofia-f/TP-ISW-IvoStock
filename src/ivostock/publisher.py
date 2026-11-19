@@ -7,6 +7,7 @@ from ivostock.config import Settings
 from ivostock.db import execute, ownership, rows
 from ivostock.failpoints import checkpoint
 from ivostock.marketplace import retry_delay
+from ivostock.publication_metrics import applied
 from ivostock.quota import reserve
 
 
@@ -78,7 +79,10 @@ def publish_store(engine, conn, store):
         with httpx.Client(timeout=10) as client:
             response = client.put(
                 f"{cfg.simulator_url}/stores/{store}/items/{task['item_id']}/stock",
-                headers={"Authorization": f"Bearer {cfg.simulator_token}"},
+                headers={
+                    "Authorization": f"Bearer {cfg.simulator_token}",
+                    "X-Ivo-Work": f"{task['link_id']}:{task['revision']}",
+                },
                 json={"available_quantity": task["quantity"]},
             )
         code = response.status_code
@@ -97,6 +101,7 @@ def publish_store(engine, conn, store):
             **params,
         )
         if code == 200:
+            applied(conn, link["id"], task["revision"], response)
             execute(
                 conn,
                 "UPDATE links SET confirmed=:q,last_success_at=now(),last_error=NULL WHERE id=:l",
