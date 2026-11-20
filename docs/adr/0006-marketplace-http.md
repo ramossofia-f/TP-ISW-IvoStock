@@ -1,10 +1,14 @@
 # ADR-0006: Marketplace simulado por HTTP
 
-Estado: aceptado. Fecha: 25/10/2026.
+Estado: aceptado. Fecha: 25/10/2026. Alternativas desarrolladas el 18/11/2026.
 
 ## Contexto y alternativas
 
-La demostración debe funcionar sin cuentas externas y permitir fallas reproducibles. Se comparan plataforma productiva, dobles de prueba en memoria y servicio HTTP persistente.
+La demostración debe funcionar sin cuentas externas (RNF-13) y permitir provocar fallas de forma reproducible: 429, errores por publicación y credenciales revocadas. Se compararon tres alternativas:
+
+- **Plataforma productiva.** Es el escenario real. Pero exige cuentas y credenciales externas, no permite provocar fallas a demanda, comparte cuota y datos con terceros y una prueba podría escribir stock real.
+- **Dobles de prueba en memoria.** Son rápidos y deterministas para pruebas unitarias. Pero no ejercitan red, autenticación, serialización, persistencia ni la cuota, y la demostración no mostraría el circuito completo.
+- **Servicio HTTP propio y persistente.** Ofrece un contrato HTTP real, con autenticación, cuota y errores controlables, sin cuentas externas, y las pruebas de integración lo usan por TCP. A cambio, hay que construirlo y mantenerlo, y lo que se demuestra vale para su contrato, no para el de un marketplace productivo.
 
 ## Decisión
 
