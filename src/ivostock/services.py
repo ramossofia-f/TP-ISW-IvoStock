@@ -76,8 +76,8 @@ def require_provider(engine, provider, active=True):
         raise Conflict("El proveedor está dado de baja")
 
 
-def add_provider(engine, name, url):
-    """Valida la fuente y guarda su vista previa; la primera ingesta queda a 300 minutos."""
+def validate_source(url):
+    """Descarga la fuente y aplica el contrato `SKU;stock` (RF-11); la usan alta y modificación."""
     try:
         raw = fetch(url)
     except httpx.HTTPStatusError as exc:
@@ -86,9 +86,31 @@ def add_provider(engine, name, url):
         # El texto de estas excepciones puede incluir la URL: sólo se informa su tipo.
         raise UpstreamError(f"No se pudo descargar la fuente ({type(exc).__name__})") from None
     try:
-        feed = parse(raw)
+        return parse(raw)
     except UnicodeError:
         raise ValueError("La fuente no está codificada en UTF-8") from None
+
+
+def _write_preview(conn, provider, feed):
+    with conn.connection.driver_connection.cursor().copy(
+        "COPY provider_preview(provider_id,sku,quantity) FROM STDIN"
+    ) as copy:
+        for sku, quantity in feed.stock.items():
+            copy.write_row((provider, sku, quantity))
+
+
+def _source_summary(feed):
+    return {
+        "sku": len(feed.stock),
+        "parse_error_rate": feed.error_rate,
+        "parse_alert": feed.alert,
+        "preview": list(feed.stock.items())[:5],
+    }
+
+
+def add_provider(engine, name, url):
+    """Valida la fuente y guarda su vista previa; la primera ingesta queda a 300 minutos."""
+    feed = validate_source(url)
     try:
         with engine.begin() as conn:
             provider = rows(
@@ -97,11 +119,7 @@ def add_provider(engine, name, url):
                 n=name,
                 u=url,
             )[0]
-            with conn.connection.driver_connection.cursor().copy(
-                "COPY provider_preview(provider_id,sku,quantity) FROM STDIN"
-            ) as copy:
-                for sku, quantity in feed.stock.items():
-                    copy.write_row((provider["id"], sku, quantity))
+            _write_preview(conn, provider["id"], feed)
             stores = rows(
                 conn, "SELECT id FROM stores WHERE import_finished_at IS NOT NULL ORDER BY id"
             )
@@ -116,14 +134,53 @@ def add_provider(engine, name, url):
     return {
         "id": provider["id"],
         "status": "validated",
-        "sku": len(feed.stock),
-        "parse_error_rate": feed.error_rate,
-        "parse_alert": feed.alert,
-        "preview": list(feed.stock.items())[:5],
+        **_source_summary(feed),
         "awaiting_first_ingest": True,
         "next_run_at": provider["next_run_at"],
         "suggestions": found,
     }
+
+
+def update_provider(engine, provider, name=None, url=None):
+    """RF-04: cambia nombre o URL; una URL nueva se valida igual que en el alta.
+
+    El inventario aceptado y los vínculos no cambian: la próxima ingesta compara la fuente nueva
+    contra el último inventario aceptado y la guarda la pone en cuarentena si difiere demasiado.
+    Se toma el mismo lock que la ingesta para no cambiar la fuente a mitad de una corrida. La
+    respuesta nunca incluye la URL.
+    """
+    if name is None and url is None:
+        raise ValueError("Indicar un nombre o una URL nuevos")
+    require_provider(engine, provider)
+    # La descarga ocurre fuera del lock: una fuente lenta no demora la ingesta.
+    feed = validate_source(url) if url is not None else None
+    with ownership(engine, f"provider:{provider}") as owner:
+        if owner is None:
+            raise Conflict("Proveedor ocupado: hay una ingesta en curso")
+        try:
+            with engine.begin() as conn:
+                found = rows(
+                    conn,
+                    "UPDATE providers SET name=COALESCE(:n,name),url=COALESCE(:u,url) "
+                    "WHERE id=:p AND active RETURNING id,name,status,next_run_at",
+                    n=name,
+                    u=url,
+                    p=provider,
+                )
+                if not found:
+                    raise Conflict("El proveedor está dado de baja")
+                if feed is not None:
+                    # Las sugerencias previas a la primera corrida usan la fuente vigente.
+                    execute(conn, "DELETE FROM provider_preview WHERE provider_id=:p", p=provider)
+                    _write_preview(conn, provider, feed)
+        except IntegrityError as exc:
+            if violated(exc) == "providers_name_key":
+                raise Conflict("Ya existe un proveedor con ese nombre") from None
+            raise
+    result = {**dict(found[0]), "source_validated": feed is not None}
+    if feed is not None:
+        result.update(_source_summary(feed))
+    return result
 
 
 def schedule_now(engine, provider):

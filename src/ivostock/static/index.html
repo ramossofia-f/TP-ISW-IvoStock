@@ -55,6 +55,20 @@
 
             <div id="prov-result" class="result hidden"></div>
 
+            <form id="form-editar-proveedor" class="hidden">
+                <h3 id="edit-titulo">Modificar proveedor</h3>
+                <label for="edit-nombre">Nombre</label>
+                <input type="text" id="edit-nombre" maxlength="100" required>
+                <label for="edit-url">Nueva URL del inventario (vacía para conservar la actual)</label>
+                <input type="url" id="edit-url" maxlength="2048">
+                <p class="muted">Una URL nueva se descarga y valida antes de guardarse. El inventario aceptado y los vínculos se conservan: si la fuente nueva difiere demasiado, la próxima ingesta queda en cuarentena.</p>
+                <div class="actions">
+                    <button type="submit">Guardar cambios</button>
+                    <button type="button" id="edit-cancelar" class="secondary">Cancelar</button>
+                </div>
+                <p id="edit-validation" class="notice hidden" role="alert"></p>
+            </form>
+
             <div class="table-wrap">
                 <table id="table-proveedores">
                     <thead>
