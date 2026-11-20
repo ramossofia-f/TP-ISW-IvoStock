@@ -29,7 +29,9 @@ El [registro E2](../entregas/ENTREGA-2.md) contiene los resultados concretos. La
 | 28/10–03/11 | Cuentas precreadas, login e interfaz de configuración; incorporar segunda tienda desde la app reutilizando inventario | Grande | Francisco Ortega | María Saráchaga |
 | 04/11–10/11 | Tablero y búsqueda; completar modificación de proveedor y comprobaciones de autorización | Mediano | María Saráchaga | Sofía Ramos |
 | 11/11–17/11 | Definir componente ML, datos y evaluación; implementar entrenamiento, inferencia y monitoreo reproducibles | Grande | Sofía Ramos | Francisco Ortega |
-| 18/11–24/11 | Medir dos tiendas (RNF-02, RNF-15), consultas (RNF-09) y disponibilidad (RNF-07); completar automatización, evidencia y defensa | Mediano | Los tres: Sofía Ramos dos tiendas, María Saráchaga consultas y Francisco Ortega disponibilidad | — |
+| 18/11–24/11 | Medir dos tiendas (RNF-02, RNF-15), consultas (RNF-09) y disponibilidad (RNF-07); completar automatización, evidencia y defensa | Mediano | Los tres: Sofía Ramos dos tiendas y consultas, María Saráchaga registro y video de la Entrega 3, Francisco Ortega disponibilidad | — |
+
+El 18/11 Sofía Ramos y María Saráchaga intercambiaron tareas del último tramo, de común acuerdo: Sofía toma la medición de consultas (RNF-09) y María, el registro y el video de la Entrega 3, para repartir mejor el código entre los tres.
 
 El referente coordina el tramo, abre su pull request y responde por su criterio de salida; el apoyo revisa ese pull request. El trabajo se comparte: cuando varios integrantes resuelven algo juntos, el commit lleva a quien lo escribió como autor y a los demás como coautores. El tamaño es relativo al tramo de una semana de tres integrantes. Si un tramo se atrasa más de dos días se aplica el orden de recorte del supuesto S-08 del [PRD](../prd/PRD.md) antes de empezar el siguiente.
 
@@ -92,6 +94,16 @@ sintético, p95 de 16,0 y p99 de 17,0. Resultados, cambios por corrida y recurso
 [con el feed sintético](../entregas/ENSAYO-DOS-TIENDAS-SINTETICO.md). Un primer ensayo con Celesa
 se descartó porque el equipo se suspendió 16 minutos durante la publicación; desde entonces el
 script detecta suspensiones y no escribe el reporte si ocurren.
+
+### Ensayo de consultas (RNF-09)
+
+`scripts/ensayo_consultas.py` sigue el protocolo del SRD: cinco operadores autenticados, una
+consulta por segundo cada uno durante 30 minutos, 9.000 consultas con 50 % listados de cien
+vínculos, 25 % búsquedas de SKU y 25 % corridas y fallas, con carga abierta y latencia medida en el
+cliente desde el instante programado. Con el inventario real de Celesa, sobre 2.000 vínculos y con
+el motor publicando (dos ingestas y 2.835 publicaciones durante la medición), cumple RNF-09: p95 de
+18 ms, p99 de 20 ms y ninguna consulta con error. Detalle por tipo de consulta y recursos en el
+[reporte del ensayo](../entregas/ENSAYO-CONSULTAS-CELESA.md).
 
 ## Preparación de la presentación E2
 

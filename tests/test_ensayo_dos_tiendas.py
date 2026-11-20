@@ -1,9 +1,13 @@
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
-ruta = Path(__file__).resolve().parents[1] / "scripts" / "ensayo_dos_tiendas.py"
+scripts = Path(__file__).resolve().parents[1] / "scripts"
+# Igual que al ejecutar `python scripts/...`: el directorio del script está en el path.
+sys.path.insert(0, str(scripts))
+ruta = scripts / "ensayo_dos_tiendas.py"
 spec = importlib.util.spec_from_file_location("ensayo_dos_tiendas", ruta)
 ensayo = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ensayo)
