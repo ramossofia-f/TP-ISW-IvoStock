@@ -37,16 +37,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"  # La de Amazon Linux 2023, que corre configurar.py en la instancia.
       - name: Scripts de AWS
         run: |
           for script in scripts/aws/*.sh; do bash -n "$script"; done
+          command -v shellcheck || sudo apt-get install -y shellcheck
           shellcheck -S warning scripts/aws/*.sh
       - name: Configuración para S3 real y Compose sin MinIO
         run: |
-          python scripts/configurar.py --s3-bucket ci-validacion
+          # Python 3.9 es el de Amazon Linux 2023, que corre configurar.py en la instancia. El
+          # runner ya no lo ofrece, así que se usa la imagen oficial.
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/w" -w /w python:3.9-slim \
+            python scripts/configurar.py --s3-bucket ci-validacion
           grep -qx 'S3_ENDPOINT=' .env
           docker compose -f docker-compose.yml -f docker-compose.aws.yml config --quiet
           servicios="$(docker compose -f docker-compose.yml -f docker-compose.aws.yml config --services)"
