@@ -91,3 +91,19 @@ una variante.
 Pendiente de ejecutar en la cuenta temporal de AWS. Se registrará aquí la salida de `desplegar.sh --verificar`
 (servicios sanos, corrida aceptada y snapshot listado en el bucket) y la de
 `destruir_entorno.sh`.
+
+### Ensayo local del 22/11/2026
+
+Antes de tener la cuenta se ensayó el modo AWS en una Mac, sobre el commit `1fa63b7`. No
+reemplaza la evidencia en AWS: prueba la configuración, no la red, IAM ni la instancia.
+
+- `.env` generado con `configurar.py --s3-bucket ivostock-ensayo --s3-region us-east-2`, sin
+  endpoint ni claves de S3.
+- Stack levantado con `docker-compose.yml` y `docker-compose.aws.yml`. Un tercer archivo, sólo
+  del ensayo, volvió a levantar MinIO. Las variables estándar `AWS_ENDPOINT_URL_S3`,
+  `AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY` hicieron de rol de la instancia.
+- Los 12 servicios quedaron sanos. Se ejecutó el recorrido de `--verificar`: feed de 10.000
+  SKU, tienda T1, proveedor, aprobación de 100 vínculos e ingesta.
+- Resultado: corrida `accepted`. La configuración leída en el contenedor tenía endpoint y
+  claves en `None` y región `us-east-2`. Quedó un objeto de 168.193 bytes en el bucket, escrito
+  por boto3 con la cadena de credenciales por defecto.
