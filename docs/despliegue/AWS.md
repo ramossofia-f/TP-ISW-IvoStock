@@ -9,37 +9,44 @@ TP sigue siendo en local, según el [README](../../README.md#arranque).
 
 | Recurso | Para qué | Seguridad |
 |---|---|---|
-| Bucket S3 `ivostock-snapshots-…` | Snapshots inmutables (ADR-0003), en lugar de MinIO | Acceso público bloqueado; la instancia accede con el rol del laboratorio, sin claves |
-| EC2 `t3.large` con Amazon Linux 2023 | Los doce servicios del stack con Docker Compose | Sólo SSH desde la IP de quien despliega; la aplicación escucha en `127.0.0.1` |
-| Grupo de seguridad | Regla única de entrada: SSH | Sin puertos de la aplicación abiertos a internet |
+| Bucket S3 `ivostock-snapshots-…` | Snapshots inmutables (ADR-0003), en lugar de MinIO | Acceso público bloqueado |
+| Rol de IAM `ivostock-…` | Credenciales temporales de la instancia para S3 | Sólo puede leer y escribir en ese bucket; no hay claves en `.env` |
+| Par de claves SSH `ivostock-…` | Acceso a la instancia | La clave privada queda en `data/aws/`, fuera de Git |
+| Grupo de seguridad | Regla única de entrada: SSH | Sólo desde la IP de quien despliega; ningún puerto de la aplicación abierto |
+| EC2 `t3.large` con Amazon Linux 2023 | Los doce servicios del stack con Docker Compose | La aplicación escucha en `127.0.0.1`; IMDSv2 obligatorio |
 
 Todo queda etiquetado con `Proyecto=ivostock`. Una hora de demostración consume unos US$0,10
-de crédito de la instancia, más el almacenamiento de unos pocos MB en S3.
+de la instancia, más unos pocos MB en S3, dentro del presupuesto de la cuenta temporal.
 
 ## Requisitos
 
-- Una sesión iniciada del **AWS Academy Learner Lab**. Su terminal trae la CLI de AWS con las
-  credenciales de la sesión.
-- La clave `labsuser.pem` del laboratorio (botón *AWS Details* → *Download PEM*) en el equipo
-  desde el que se despliega, con permisos `chmod 400`.
-- En ese equipo: Git, SSH y este repositorio en el commit que se quiere desplegar.
+- **Una cuenta temporal de AWS** del Innovation Sandbox de UdeSA: en el portal de acceso,
+  aplicación *UdeSA SandBox* → *Request lease* → plantilla *Ing del Soft*. Requiere aprobación de
+  la cátedra; cuando está activa, la cuenta aparece en la pestaña *Cuentas* del portal.
+- **La CLI de AWS v2** con un perfil de esa cuenta. Con el portal de UdeSA (región `us-east-2`):
+
+  ```sh
+  aws configure sso    # URL de inicio: https://d-9a677ec212.awsapps.com/start, región us-east-2
+  aws sso login --profile PERFIL
+  ```
+
+- Git, SSH y este repositorio en el commit que se quiere desplegar.
 
 ## Pasos
 
-1. **Crear el entorno**, en la terminal del Learner Lab, con la IP pública del equipo que va a
-   desplegar (se obtiene con `curl https://checkip.amazonaws.com` en ese equipo):
+Desde la raíz del repo, con `AWS_PROFILE` apuntando a la cuenta temporal:
+
+1. **Crear el entorno.** Toma la IP pública de este equipo para la regla de SSH y guarda los
+   datos del entorno en `data/aws/entorno.env`:
 
    ```sh
-   git clone URL_DEL_REPO ivostock && cd ivostock
-   scripts/aws/crear_entorno.sh IP_DEL_EQUIPO
+   AWS_PROFILE=PERFIL scripts/aws/crear_entorno.sh
    ```
 
-   Al terminar imprime el host de la instancia, el bucket y el comando siguiente.
-
-2. **Desplegar y verificar**, desde la raíz del repo en el equipo:
+2. **Desplegar y verificar:**
 
    ```sh
-   scripts/aws/desplegar.sh HOST BUCKET RUTA/labsuser.pem --verificar
+   scripts/aws/desplegar.sh --verificar
    ```
 
    Espera a que la instancia termine de instalar Docker, copia el commit con `git archive` (sin
@@ -52,19 +59,20 @@ de crédito de la instancia, más el almacenamiento de unos pocos MB en S3.
 3. **Usar la interfaz**, con el túnel que imprime el script:
 
    ```sh
-   ssh -i RUTA/labsuser.pem -N -L 8000:127.0.0.1:8000 -L 8004:127.0.0.1:8004 ec2-user@HOST
+   ssh -i data/aws/ivostock-….pem -N -L 8000:127.0.0.1:8000 -L 8004:127.0.0.1:8004 ec2-user@HOST
    ```
 
    La aplicación queda en <http://localhost:8000> y las cuentas de operador están en
    `ivostock/data/operadores.txt` de la instancia.
 
-4. **Destruir todo**, en la terminal del Learner Lab:
+4. **Destruir todo:**
 
    ```sh
-   scripts/aws/destruir_entorno.sh
+   AWS_PROFILE=PERFIL scripts/aws/destruir_entorno.sh
    ```
 
-   Termina la instancia y borra el grupo de seguridad y el bucket con sus snapshots.
+   Termina la instancia y borra el grupo de seguridad, el par de claves, el rol y el bucket con
+   sus snapshots.
 
 ## Diferencias con el despliegue local
 
@@ -80,6 +88,6 @@ una variante.
 
 ## Evidencia
 
-Pendiente de ejecutar en AWS Academy. Se registrará aquí la salida de `desplegar.sh --verificar`
+Pendiente de ejecutar en la cuenta temporal de AWS. Se registrará aquí la salida de `desplegar.sh --verificar`
 (servicios sanos, corrida aceptada y snapshot listado en el bucket) y la de
 `destruir_entorno.sh`.

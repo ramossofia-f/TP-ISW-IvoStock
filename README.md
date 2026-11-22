@@ -54,12 +54,12 @@ La interfaz de configuración (RF-25) se sirve desde la propia API en <http://lo
 
 ## Despliegue en AWS
 
-El sistema también corre en la nube con el mismo Compose ([ADR-0018](docs/adr/0018-despliegue-cloud-efimero.md)): una instancia EC2 de AWS Academy levanta los mismos servicios y guarda los snapshots en un bucket S3 real en lugar de MinIO, con las credenciales del rol de la instancia y sin claves en `.env`. Es un entorno efímero de demostración; la corrección sigue siendo en local.
+El sistema también corre en la nube con el mismo Compose ([ADR-0018](docs/adr/0018-despliegue-cloud-efimero.md)): una instancia EC2 en una cuenta temporal de AWS levanta los mismos servicios y guarda los snapshots en un bucket S3 real en lugar de MinIO, con las credenciales del rol de la instancia y sin claves en `.env`. Es un entorno efímero de demostración; la corrección sigue siendo en local.
 
 ```sh
-scripts/aws/crear_entorno.sh IP_DEL_EQUIPO                                 # en la terminal del Learner Lab
-scripts/aws/desplegar.sh HOST BUCKET RUTA/labsuser.pem --verificar          # desde este repo
-scripts/aws/destruir_entorno.sh                                            # al terminar
+AWS_PROFILE=PERFIL scripts/aws/crear_entorno.sh      # bucket, rol, clave SSH, grupo de seguridad y EC2
+scripts/aws/desplegar.sh --verificar                  # el commit actual, con un recorrido de punta a punta
+AWS_PROFILE=PERFIL scripts/aws/destruir_entorno.sh   # al terminar
 ```
 
 La aplicación no se expone a internet: se usa por túnel SSH. Pasos, costos y evidencia en [docs/despliegue/AWS.md](docs/despliegue/AWS.md).
