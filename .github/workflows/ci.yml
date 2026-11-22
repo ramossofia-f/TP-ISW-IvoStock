@@ -31,3 +31,24 @@ jobs:
       - name: Apagar servicios conservando datos
         if: always()
         run: docker compose down
+
+  # Readiness cloud (ADR-0018): valida sin credenciales lo que se despliega en AWS.
+  despliegue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"  # La de Amazon Linux 2023, que corre configurar.py en la instancia.
+      - name: Scripts de AWS
+        run: |
+          for script in scripts/aws/*.sh; do bash -n "$script"; done
+          shellcheck -S warning scripts/aws/*.sh
+      - name: Configuración para S3 real y Compose sin MinIO
+        run: |
+          python scripts/configurar.py --s3-bucket ci-validacion
+          grep -qx 'S3_ENDPOINT=' .env
+          docker compose -f docker-compose.yml -f docker-compose.aws.yml config --quiet
+          servicios="$(docker compose -f docker-compose.yml -f docker-compose.aws.yml config --services)"
+          echo "$servicios"
+          ! grep -qx minio <<< "$servicios"

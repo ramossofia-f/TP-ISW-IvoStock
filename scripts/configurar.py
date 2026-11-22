@@ -4,11 +4,17 @@ Además precrea las cuentas de los operadores (RF-01): en `.env` quedan sólo su
 (`OPERATOR_ACCOUNTS`) y las contraseñas en `data/operadores.txt`, que Git ignora. Si las
 cuentas ya existen no se regeneran; para rotarlas, borrar `OPERATOR_ACCOUNTS` de `.env` y
 volver a ejecutar este script.
+
+Con `--s3-bucket` (y opcionalmente `--s3-region`) prepara el despliegue en AWS: los snapshots
+van a ese bucket de S3, sin endpoint ni claves en `.env`, con las credenciales del rol de la
+instancia (ver `docs/despliegue/AWS.md`).
 """
 
+import argparse
 import hashlib
 import os
 import secrets
+import sys
 from pathlib import Path
 
 OPERATORS = [f"operador{n}" for n in range(1, 6)]
@@ -40,7 +46,11 @@ def write_passwords(passwords, path):
         handle.write(lines)
 
 
-def main():
+def main(argv=()):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--s3-bucket", help="Bucket de S3 en AWS; sin esta opción se usa MinIO local")
+    ap.add_argument("--s3-region", default="us-east-1")
+    args = ap.parse_args(list(argv))
     target = Path(".env")
     current = {}
     if target.exists():
@@ -56,6 +66,7 @@ def main():
         "S3_ACCESS_KEY": secrets.token_hex(12),
         "S3_SECRET_KEY": secrets.token_hex(24),
         "S3_BUCKET": "snapshots",
+        "S3_REGION": "us-east-1",
         "SIMULATOR_URL": "http://simulator:8001",
         "SIMULATOR_TOKEN": secrets.token_hex(24),
         "SIMULATOR_ADMIN_TOKEN": secrets.token_hex(24),
@@ -73,6 +84,18 @@ def main():
         "ML_NU": "0.05",
         "ML_RETRY_SECONDS": "30",
     }
+    if args.s3_bucket:
+        if current.get("S3_ENDPOINT"):
+            raise SystemExit("El .env existente usa MinIO: generar uno nuevo para AWS")
+        values.update(
+            {
+                "S3_ENDPOINT": "",
+                "S3_ACCESS_KEY": "",
+                "S3_SECRET_KEY": "",
+                "S3_BUCKET": args.s3_bucket,
+                "S3_REGION": args.s3_region,
+            }
+        )
     operators_created = "OPERATOR_ACCOUNTS" not in current
     if operators_created:
         values["OPERATOR_ACCOUNTS"], passwords = new_operators()
@@ -88,4 +111,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

@@ -52,6 +52,18 @@ También se puede ejecutar `make up`. La configuración inicial genera secretos 
 
 La interfaz de configuración (RF-25) se sirve desde la propia API en <http://localhost:8000/>: se ingresa con una cuenta de `data/operadores.txt` (ver [Cuentas de operador](#cuentas-de-operador)) y permite dar de alta y baja proveedores, incorporar tiendas, aprobar vínculos, apagarlos o reanudarlos y seguir las corridas de ingesta. Es HTML y JavaScript estáticos, sin build ([ADR-0013](docs/adr/0013-interfaz-estatica.md)). La CLI y la sesión `usuario>` siguen disponibles para ensayo y operación.
 
+## Despliegue en AWS
+
+El sistema también corre en la nube con el mismo Compose ([ADR-0018](docs/adr/0018-despliegue-cloud-efimero.md)): una instancia EC2 de AWS Academy levanta los mismos servicios y guarda los snapshots en un bucket S3 real en lugar de MinIO, con las credenciales del rol de la instancia y sin claves en `.env`. Es un entorno efímero de demostración; la corrección sigue siendo en local.
+
+```sh
+scripts/aws/crear_entorno.sh IP_DEL_EQUIPO                                 # en la terminal del Learner Lab
+scripts/aws/desplegar.sh HOST BUCKET RUTA/labsuser.pem --verificar          # desde este repo
+scripts/aws/destruir_entorno.sh                                            # al terminar
+```
+
+La aplicación no se expone a internet: se usa por túnel SSH. Pasos, costos y evidencia en [docs/despliegue/AWS.md](docs/despliegue/AWS.md).
+
 ## Cuentas de operador
 
 `python scripts/configurar.py` precrea cinco operadores (`operador1` a `operador5`): los hashes quedan en `OPERATOR_ACCOUNTS` de `.env` y las contraseñas, en `data/operadores.txt`, ambos fuera de Git. El servicio `init` los copia a PostgreSQL en cada arranque. Si las cuentas ya existen no se regeneran; para rotarlas se borra `OPERATOR_ACCOUNTS` de `.env`, se ejecuta de nuevo el script y se reinicia con `docker compose up -d --wait`, lo que cierra las sesiones de las cuentas cambiadas. Decisión y alternativas en el [ADR-0010](docs/adr/0010-cuentas-y-sesiones.md).

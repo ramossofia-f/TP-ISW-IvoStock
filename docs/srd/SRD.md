@@ -450,6 +450,25 @@ La CLI devuelve JSON y códigos de salida no nulos para errores. `monitor` reún
 
 El generador `ivostock.generador.feeds` produce escenarios sintéticos con semilla y manifiesto de parámetros/hashes; no modifica el inventario usado como base. Los logs de ingesta se formatean mediante `ivostock.logs`: mantienen contexto operativo y omiten el mensaje y traceback de excepciones externas. La CLI conserva su resultado JSON en stdout y envía estos diagnósticos a stderr.
 
+## Despliegue y readiness cloud
+
+El mecanismo principal de ejecución es Docker Compose en local (ADR-0008). La readiness cloud se demuestra con un despliegue efímero en AWS ([ADR-0018](../adr/0018-despliegue-cloud-efimero.md)): una instancia EC2 corre el mismo `docker-compose.yml`, combinado con `docker-compose.aws.yml`, y los snapshots van a un bucket S3 real en lugar de MinIO. Sin `S3_ENDPOINT` ni claves, `boto3` usa las credenciales del rol de la instancia, así que ninguna clave de AWS queda en `.env`, en Git ni en la imagen; `S3_REGION` fija la región y la creación del bucket la declara fuera de `us-east-1`. Los puertos siguen en `127.0.0.1` y el acceso es por túnel SSH. `scripts/aws/` crea, despliega con verificación de punta a punta y destruye el entorno; el job `despliegue` de la CI valida esos scripts y la configuración combinada sin credenciales. La guía está en [docs/despliegue/AWS.md](../despliegue/AWS.md).
+
+## Cuellos de botella y escalabilidad
+
+El diseño identifica dónde se limita el caudal y cómo crecería. No se implementa esa escala: el MVP se mide con dos tiendas y 2.000 vínculos.
+
+| Punto | Por qué limita | Medición o cota | Cómo escalaría |
+|---|---|---|---|
+| Cuota del marketplace por tienda | Sesenta llamadas por minuto compartidas entre lecturas y escrituras (RF-17); la API cambia una cantidad por llamada | 1.000 cambios en una tienda tardan unos 17 minutos (RNF-02: p95 de 15 a 16 minutos con Celesa) | Las tiendas no comparten cuota, así que más tiendas no se frenan entre sí. Dentro de una tienda el techo es externo: sólo lo cambia una cuota mayor o una API de escritura por lotes del marketplace. La cola por vínculo evita gastar cuota en valores vencidos (ADR-0004) |
+| Importación inicial del catálogo | Consume la misma cuota: cien publicaciones por llamada | 127.564 publicaciones, unos 22 minutos por tienda | Ocurre una vez por tienda y la rotación evita que una importación larga demore a otra (ADR-0012) |
+| Ingesta y comparación por proveedor | Un lock por proveedor serializa sus corridas | Feed real de 255.129 SKU: 7 segundos de ingesta y comparación (RNF-01, objetivo de 10 minutos) | Proveedores distintos ya corren en paralelo; se pueden agregar réplicas de los workers `ingest` y `compare` porque se reparten el trabajo con esos locks |
+| Publicación | Un lock por tienda serializa sus envíos | El techo lo pone la cuota, no el proceso | Réplicas del worker `publish` atienden tiendas distintas en paralelo, sin coordinación adicional |
+| PostgreSQL | Base compartida por todos los procesos y punto común de falla (ADR-0002, RNF-08) | Consultas de operadores con p95 de 18 ms con el motor publicando (RNF-09) | Primero vertical; después RDS con réplica de lectura para consultas y tablero, y particionar las tablas de intentos y mediciones por fecha. La cola en tabla deja de ser suficiente recién con muchos más vínculos que los del MVP |
+| Snapshots | Cada corrida guarda el feed completo, unos 3,9 MB por corrida del feed real | Unos 19 MB por día y proveedor con corridas cada 300 minutos; hoy no se borran | S3 escala sin cambios de código; en producción una regla de ciclo de vida movería los snapshots viejos a almacenamiento frío y borraría los que ninguna corrida referencia |
+| Entrenamiento de ML | Reentrena el modelo global por cada aceptado pendiente | Hasta 200 observaciones por proveedor (ADR-0016) | El costo crece con la cantidad de proveedores; se acotaría entrenando por lotes o por intervalo en lugar de por observación |
+| Muestreo de métricas | Recalcula la ventana de 24 horas cada minuto | Índices sobre las expresiones de la ventana (migración `0009`) | Agregados incrementales por minuto si el volumen de mediciones creciera |
+
 ## Protocolos de verificación
 
 Las pruebas unitarias cubren RF-11 a RF-14. La integración usa un PostgreSQL real separado, `ivostock_test`, un bucket `snapshots-test`, servidor HTTP de feeds y simulador por TCP. Cubre RF-05 a RF-24 y RNF-03 a RNF-06, incluidas la reanudación del catálogo tras matar su worker, la aprobación previa a la primera corrida, la baja de proveedor (RF-20), la fuente inaccesible (RF-23) y la tienda con credencial revocada (RF-24). Cada prueba limpia únicamente su base de ensayo.
