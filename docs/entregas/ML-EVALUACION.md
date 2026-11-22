@@ -1,8 +1,8 @@
 # Evaluación del detector de corridas defectuosas
 
 **Registro histórico del clasificador binario del ADR-0015.** El PR #18 implementa el detector de
-normalidad del [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md), pendiente
-de revisión conjunta. Estas cifras no describen ese modelo global ni son una comparación
+normalidad del [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md), que lo
+reemplazó. Estas cifras no describen ese modelo global ni son una comparación
 controlada con él: difieren conjuntos, variables y protocolos. El script anterior y sus artefactos se conservan para
 reproducir este experimento; no entrenan ni activan el detector de la aplicación.
 

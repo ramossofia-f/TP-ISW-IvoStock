@@ -331,9 +331,8 @@ El comparador toma el mismo lock por proveedor. Lee su inventario vigente y los 
 
 ## Validación y aprendizaje de normalidad
 
-El [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md) plantea el diseño
-de normalidad implementado y espera revisión de los tres integrantes; conserva la guarda
-obligatoria del ADR-0015. Después de parsear y calcular D/Z/p, la ingesta pone en cuarentena si
+El [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md) define el diseño de
+normalidad implementado y conserva la guarda obligatoria del ADR-0015. Después de parsear y calcular D/Z/p, la ingesta pone en cuarentena si
 p>0,5, sin consultar ML. Sólo si pasa la guarda, llama al servicio privado
 `ivostock.ml.api` con el ID estable del proveedor y siete estadísticas: `rows`, `sku`, número de
 `discarded`, `parse_error_rate`, `D`, `Z`, `p`. No envía archivos, claves de snapshot ni URLs.

@@ -1,6 +1,10 @@
 """Evaluación reproducible y sintética del detector vigente; nunca activa un modelo.
 
 uv run --group ml python scripts/ml_evaluar_normalidad.py
+uv run --group ml python scripts/ml_evaluar_normalidad.py --nu 0.01   # sensibilidad, sin guardar
+
+Con `--nu` distinto del vigente imprime el resultado y no reemplaza el reporte versionado, salvo
+que se indique `--output`.
 """
 
 import argparse
@@ -28,7 +32,7 @@ def sample(provider, scenario, seed):
             "discarded": len(current.discarded), "parse_error_rate": current.error_rate}
 
 
-def evaluate(seed=16, train_count=200, test_count=50):
+def evaluate(seed=16, train_count=200, test_count=50, nu=None):
     observations = []
     for provider in (1, 2):
         for index in range(train_count):
@@ -37,7 +41,8 @@ def evaluate(seed=16, train_count=200, test_count=50):
             observations.append({"run_id": len(observations) + 1, "provider_id": provider,
                                  "features": values, "accepted_at": datetime(2026, 1, 1, tzinfo=UTC)
                                  + timedelta(hours=index * 5)})
-    payload = fit(observations, TrainingConfig())
+    config = TrainingConfig() if nu is None else TrainingConfig(nu=nu)
+    payload = fit(observations, config)
     model = NormalityModel(payload)
     results = []
     for order, (scenario, (label, _)) in enumerate(ESCENARIOS.items()):
@@ -60,15 +65,25 @@ def main():
     parser.add_argument("--seed", type=int, default=16)
     parser.add_argument("--train-per-provider", type=int, default=200)
     parser.add_argument("--test-per-scenario-provider", type=int, default=50)
-    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[1]
-                        / "docs/entregas/ML-NORMALIDAD-EVALUACION.md")
+    parser.add_argument("--nu", type=float, help="Variar nu para medir la sensibilidad (ADR-0016)")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    if args.output is None and args.nu is not None:
+        _, results = evaluate(args.seed, args.train_per_provider, args.test_per_scenario_provider,
+                              args.nu)
+        for name, label, n, rules, ml, combined in results:
+            print(f"nu={args.nu} {name}: guarda o ML rechaza {combined / n:.1%}")
+        return
+    args.output = args.output or (Path(__file__).resolve().parents[1]
+                                  / "docs/entregas/ML-NORMALIDAD-EVALUACION.md")
     if min(args.train_per_provider, args.test_per_scenario_provider) < 10:
         parser.error("Usar al menos diez ejemplos por grupo")
-    payload, results = evaluate(args.seed, args.train_per_provider, args.test_per_scenario_provider)
+    payload, results = evaluate(args.seed, args.train_per_provider, args.test_per_scenario_provider,
+                                args.nu)
     lines = [
         "# Evaluación sintética del detector global de normalidad", "",
-        "Diseño implementado para revisión: [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md).",
+        "Diseño vigente: [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md), aceptado"
+        " con la sensibilidad a `nu` que registra ese ADR.",
         "Este ensayo no activa modelos ni usa feeds reales. Entrena sólo con escenarios estables",
         "que pasan las reglas; evalúa semillas disjuntas. Las etiquetas se usan exclusivamente",
         "para medir en prueba, nunca para entrenar. Los agotamientos y depuraciones legítimos",

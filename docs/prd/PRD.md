@@ -104,9 +104,9 @@ entrenador procesa cada pendiente sin demorar publicación, con hasta doscientos
 proveedor y peso reducido a la mitad cada siete días. Una caída indefinida de ML no detiene al
 motor: conserva el modelo previo y el aprendizaje pendiente. Al recuperar, procesa sin duplicar
 observaciones. No se importan históricos automáticamente. Los valores de arranque y memoria son
-configurables; no constituyen garantías de precisión. El [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md)
-describe el modelo implementado, sus limitaciones y la reproducción; espera revisión de los tres
-integrantes. Se conserva la guarda obligatoria del ADR-0015.
+configurables; no constituyen garantías de precisión. El [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md)
+describe el modelo, sus limitaciones, la reproducción y el costo aceptado en falsas cuarentenas.
+Se conserva la guarda obligatoria del ADR-0015.
 
 ## Requisitos no funcionales
 

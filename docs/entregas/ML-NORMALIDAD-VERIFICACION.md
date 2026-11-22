@@ -73,7 +73,7 @@ Se restablece RF-13: cuarentena si guarda o ML. La guarda p>0,5 se evalúa prime
 omitida por un modelo, aprobación ni replay. Si rechaza no se consulta ML: se registra
 `guard_accepted=false`, origen `rules`, sin versión, puntaje ni motivo de respaldo. ML sólo agrega
 cuarentenas a los feeds que pasan la guarda; arranque y caídas conservan la operación por reglas.
-El ADR-0016 queda propuesto, pendiente de revisión de los tres integrantes.
+El ADR-0016 quedó propuesto al cerrar esta verificación y se aceptó el 22/11/2026.
 
 | Comprobación ejecutada para la corrección | Resultado |
 |---|---|

@@ -1,6 +1,6 @@
 # Evaluación sintética del detector global de normalidad
 
-Diseño implementado para revisión: [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md).
+Diseño vigente: [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md), aceptado con la sensibilidad a `nu` que registra ese ADR.
 Este ensayo no activa modelos ni usa feeds reales. Entrena sólo con escenarios estables
 que pasan las reglas; evalúa semillas disjuntas. Las etiquetas se usan exclusivamente
 para medir en prueba, nunca para entrenar. Los agotamientos y depuraciones legítimos

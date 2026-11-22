@@ -49,16 +49,16 @@ Del tramo siguiente ya están el tablero de corridas y la búsqueda de sugerenci
 
 ### Plan del tramo 11/11–17/11 (ML)
 
-El [ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md) implementa un
-modelo global de normalidad que aprende de aceptados y reentrena mediante outbox. Espera revisión
-de los tres integrantes para reemplazar el modelo binario del [ADR-0015](../adr/0015-detector-de-feeds-anomalos.md).
+El [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md) implementa un modelo global de normalidad que aprende
+de aceptados y reentrena mediante outbox. Se aceptó el 22/11/2026 y reemplaza el modelo binario
+del [ADR-0015](../adr/0015-detector-de-feeds-anomalos.md).
 Se mantienen la guarda obligatoria y su rol monótono: cuarentena si guarda o ML, sin omisiones.
 Se conserva el reparto de contribuciones; las cifras del modelo anterior son evidencia histórica.
 
 | Parte | Resultado verificable | Autor | Revisa |
 |---|---|---|---|
 | Experimento anterior: datos y entrenamiento | Generador, variables, conjunto reproducible, modelo binario y evaluación conservados como histórico | Sofía Ramos | Francisco Ortega |
-| Implementación propuesta: normalidad e integración | Modelo global OneClassSVM adicional a la guarda, servicio privado, aprendizaje durable, versiones reproducibles, diagnóstico interno y aviso de cuarentena; ADR pendiente de revisión conjunta | Francisco Ortega | Sofía Ramos |
+| Implementación vigente: normalidad e integración | Modelo global OneClassSVM adicional a la guarda, servicio privado, aprendizaje durable, versiones reproducibles, diagnóstico interno y aviso de cuarentena; ADR-0016 aceptado | Francisco Ortega | Sofía Ramos |
 
 Implementación verificada localmente en el [registro del detector](../entregas/ML-NORMALIDAD-VERIFICACION.md):
 300 pruebas Python aprobadas en Docker tras restablecer la guarda obligatoria y aviso comprobado

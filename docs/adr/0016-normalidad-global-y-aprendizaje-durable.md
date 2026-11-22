@@ -1,9 +1,8 @@
 # ADR-0016: Detector global de normalidad y aprendizaje durable
 
-Estado: propuesto. Fecha: 17/11/2026. Pendiente de revisión conjunta de Sofía Ramos,
-María Saráchaga y Francisco Ortega. Propone reemplazar el modelo binario del
-[ADR-0015](0015-detector-de-feeds-anomalos.md), conservando su guarda obligatoria y rol monótono.
-La implementación del PR #18 no implica aceptación de este ADR por el equipo.
+Estado: aceptado el 22/11/2026, con la evaluación de sensibilidad de la última sección. Propuesto
+el 17/11/2026. Reemplaza el modelo binario del [ADR-0015](0015-detector-de-feeds-anomalos.md) y
+conserva su guarda obligatoria y su rol monótono.
 
 ## Contexto y alternativas
 
@@ -20,7 +19,7 @@ exportar su función como JSON. Un detector lineal no representa las interaccion
 y estadísticas. Un entrenamiento sincrónico demoraría la publicación; una cola en memoria perdería
 aceptados durante una caída. Se usa una outbox en PostgreSQL.
 
-## Decisión propuesta e implementada para revisión
+## Decisión
 
 - Un solo modelo global recibe el ID estable del proveedor mediante one-hot y siete estadísticas:
   filas, SKU, cantidad de descartes, tasa de errores, D, Z y p. Los conteos usan log1p y las variables
@@ -76,5 +75,44 @@ La evaluación inicial de normalidad registra 8 % de falsas cuarentenas estables
 de truncamientos leves; no demuestra una mejora sobre la logística. Los conjuntos, variables y
 protocolos difieren del ensayo anterior: no constituyen una comparación controlada. Se publican
 también resultados de guarda o ML. Conservar la guarda evita perder sus rechazos, pero no reduce
-las falsas cuarentenas que agregue ML. Quedan para revisión conjunta la elección del detector y
-su calidad; no se declara cumplido el presupuesto de falsas cuarentenas del ADR-0015.
+las falsas cuarentenas que agregue ML. No se declara cumplido el presupuesto de falsas cuarentenas
+del ADR-0015.
+
+## Elección frente al detector binario
+
+Se acepta este detector y no el binario del ADR-0015 por tres razones:
+
+- **Aprende de corridas reales.** El binario necesita ejemplos defectuosos etiquetados, que sólo
+  existen en el generador sintético; su mejor variable, la concentración de ausentes al final del
+  archivo, depende de que el generador trunque por la cola y de que el proveedor conserve el
+  orden, algo que no se pudo verificar con un solo snapshot real. Este detector aprende de las
+  aceptaciones de cada proveedor y no supone cómo son los defectos.
+- **Está en producción completa.** Entrenamiento asíncrono y durable, versiones reproducibles,
+  servicio de inferencia separado, respaldo por reglas y monitoreo; el binario quedó como
+  entrenamiento y evaluación fuera de línea.
+- **La guarda limita su riesgo.** Como sólo suma cuarentenas, un error del modelo nunca acepta lo
+  que la guarda frena.
+
+El costo aceptado son las falsas cuarentenas en corridas normales. Se evaluó si es un problema de
+calibración variando `nu`, con el mismo protocolo de [la evaluación](../entregas/ML-NORMALIDAD-EVALUACION.md)
+(`uv run --group ml python scripts/ml_evaluar_normalidad.py --nu VALOR`), decidiendo con guarda o ML:
+
+| `nu` | Falsas cuarentenas en corridas estables | Truncamientos leves detectados | Truncamientos, ceros masivos y filas corruptas |
+|---|---:|---:|---:|
+| 0,005 | 6 % | 80 % | 100 % |
+| 0,01 | 6 % | 80 % | 100 % |
+| 0,02 | 7 % | 81 % | 100 % |
+| 0,05 (vigente) | 8 % | 81 % | 100 % |
+| 0,10 | 19 % | 85 % | 100 % |
+
+Bajar `nu` sólo quita dos puntos: el piso de alrededor de 6 % viene de aprender únicamente de
+aceptados, no de la calibración. Se conserva `nu = 0,05`. Una falsa cuarentena no publica nada:
+el proveedor queda degradado con un aviso al operador y la corrida siguiente vuelve a evaluarse.
+Los agotamientos masivos y las depuraciones legítimas también quedan en cuarentena, igual que con
+la guarda sola; aprender esas novedades exigiría una aprobación manual, que el PRD descarta.
+
+La reproducción es exacta en una misma plataforma: el mismo conjunto, la misma configuración y las
+mismas bibliotecas dan la misma versión. Entre arquitecturas distintas (por ejemplo, x86 y ARM) la
+aritmética de punto flotante del entrenamiento cambia los últimos decimales de los coeficientes y,
+con ellos, el hash de la versión, aunque las decisiones de la evaluación coinciden. Por eso se
+versiona el modelo entrenado y no se lo recalcula al desplegar.

@@ -128,7 +128,7 @@ También permite `--ceros`, `--corruptas`, `--deriva` y `--bajas` (SKU dispersos
 
 ### Detector global de normalidad (ML)
 
-El componente implementado ([ADR-0016 propuesto](docs/adr/0016-normalidad-global-y-aprendizaje-durable.md)) aprende
+El componente implementado ([ADR-0016](docs/adr/0016-normalidad-global-y-aprendizaje-durable.md)) aprende
 únicamente de corridas aceptadas: OneClassSVM RBF, proveedor one-hot y siete estadísticas ya
 calculadas por ingesta. `ml` sirve la inferencia en Python puro; `ml-train` instala sklearn y
 reentrena en segundo plano. `make up` inicia ambos, sin esperar a reunir el historial.
@@ -174,8 +174,9 @@ evaluación sintética del diseño vigente se reproduce con
 declara falsas cuarentenas y detecciones sobre escenarios reservados. La
 [evaluación anterior](docs/entregas/ML-EVALUACION.md), `scripts/ml_entrenar.py` y su `modelo.json`
 pertenecen al experimento binario histórico y no activan ni evalúan el detector implementado.
-El ADR-0016 queda propuesto hasta que lo revisen los tres integrantes; la calidad del detector
-sigue bajo revisión y no se acredita una mejora respecto de la logística con ensayos distintos.
+El ADR-0016 se aceptó el 22/11/2026: explica por qué se eligió frente al clasificador binario y
+mide el costo en falsas cuarentenas (alrededor de 6 a 8 % de las corridas normales), que no se
+reduce ajustando `nu`. No se acredita una mejora respecto de la logística: los ensayos difieren.
 
 El [registro de verificación](docs/entregas/ML-NORMALIDAD-VERIFICACION.md) separa las comprobaciones
 de modelo, circuito, recuperación, privacidad y avisos de los ensayos todavía no realizados.
@@ -372,4 +373,4 @@ El ensayo de dos tiendas (RNF-02 y RNF-15) corre contra el stack levantado, con 
 
 El ensayo de consultas (RNF-09) corre en el mismo proyecto después del de dos tiendas, que deja los 2.000 vínculos: `uv run python scripts/ensayo_consultas.py --fuente celesa` (o `--fuente sintetico`). Inicia sesión con las cinco cuentas de `data/operadores.txt` y durante 30 minutos hace 9.000 consultas a la API con el reparto del SRD, mientras adelanta dos ingestas para que el motor publique. Mide en el cliente desde el instante programado de cada consulta; un error o un timeout hace que no cumpla. `--minutos 1` sirve como prueba rápida. [Resultado con Celesa](docs/entregas/ENSAYO-CONSULTAS-CELESA.md).
 
-El [registro de E2](docs/entregas/ENTREGA-2.md) separa resultados históricos de ensayos pendientes. Las pruebas largas de disponibilidad, capacidad de interfaz y dos tiendas corresponden al MVP. El diseño de ML implementado para revisión está en el ADR-0016 propuesto.
+El [registro de E2](docs/entregas/ENTREGA-2.md) separa resultados históricos de ensayos pendientes. Las pruebas largas de disponibilidad, capacidad de interfaz y dos tiendas corresponden al MVP. El diseño de ML vigente está en el ADR-0016.
