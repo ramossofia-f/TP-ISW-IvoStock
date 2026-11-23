@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Elimina todo lo que creó crear_entorno.sh: instancias, grupos de seguridad, pares de claves,
-# roles y buckets con la etiqueta Proyecto=ivostock. Los snapshots se borran: es un entorno de
+# VPC, roles y buckets con la etiqueta Proyecto=ivostock. Los snapshots se borran: es un entorno de
 # demostración.
 #
 #   AWS_PROFILE=PERFIL scripts/aws/destruir_entorno.sh
@@ -9,6 +9,7 @@ if [ -f data/aws/entorno.env ]; then
   # shellcheck source=/dev/null
   source data/aws/entorno.env
 fi
+AWS_REGION="${AWS_REGION:-$(aws configure get region || true)}"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 
 INSTANCIAS="$(aws ec2 describe-instances \
@@ -29,8 +30,27 @@ done
 for CLAVE in $(aws ec2 describe-key-pairs --filters Name=tag:Proyecto,Values=ivostock \
   --query 'KeyPairs[].KeyName' --output text); do
   echo "Borrando par de claves $CLAVE"
-  aws ec2 delete-key-pair --key-name "$CLAVE"
+  aws ec2 delete-key-pair --key-name "$CLAVE" >/dev/null
   rm -f "data/aws/$CLAVE.pem"
+done
+for VPC in $(aws ec2 describe-vpcs --filters Name=tag:Proyecto,Values=ivostock \
+  --query 'Vpcs[].VpcId' --output text); do
+  echo "Borrando la VPC $VPC con su subred, tabla de rutas y puerta de enlace"
+  for SUBRED in $(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC" \
+    --query 'Subnets[].SubnetId' --output text); do
+    aws ec2 delete-subnet --subnet-id "$SUBRED"
+  done
+  for TABLA in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC" \
+    --query 'RouteTables[?!Associations[?Main]].RouteTableId' --output text); do
+    aws ec2 delete-route-table --route-table-id "$TABLA"
+  done
+  for PUERTA in $(aws ec2 describe-internet-gateways \
+    --filters "Name=attachment.vpc-id,Values=$VPC" \
+    --query 'InternetGateways[].InternetGatewayId' --output text); do
+    aws ec2 detach-internet-gateway --internet-gateway-id "$PUERTA" --vpc-id "$VPC"
+    aws ec2 delete-internet-gateway --internet-gateway-id "$PUERTA"
+  done
+  aws ec2 delete-vpc --vpc-id "$VPC"
 done
 for ROL in $(aws iam list-roles --query 'Roles[?starts_with(RoleName, `ivostock-`)].RoleName' --output text); do
   if aws iam list-role-tags --role-name "$ROL" \

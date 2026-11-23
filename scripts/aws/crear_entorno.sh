@@ -9,13 +9,16 @@
 #   - un bucket S3 privado para los snapshots;
 #   - un rol de IAM para la instancia con permiso sólo sobre ese bucket, sin claves;
 #   - un par de claves SSH, cuya parte privada queda en data/aws/ (fuera de Git);
+#   - una VPC propia con una subred pública (las cuentas del sandbox no traen VPC por defecto);
 #   - un grupo de seguridad que sólo admite SSH desde esa IP;
 #   - una instancia EC2 con Docker.
 # Los datos del entorno quedan en data/aws/entorno.env para desplegar.sh y destruir_entorno.sh.
 set -euo pipefail
 
 IP="${1:-$(curl -fsS https://checkip.amazonaws.com)}"
-REGION="${AWS_REGION:-us-east-1}"
+# Región: AWS_REGION, si no la del perfil, si no us-east-1.
+REGION="${AWS_REGION:-$(aws configure get region || true)}"
+REGION="${REGION:-us-east-1}"
 TIPO="${INSTANCE_TYPE:-t3.large}"
 SUFIJO="$(date +%s)"
 CUENTA="$(aws sts get-caller-identity --query Account --output text)"
@@ -55,9 +58,32 @@ aws ec2 create-key-pair --key-name "$NOMBRE" --key-type ed25519 \
   --query KeyMaterial --output text > "$CLAVE"
 chmod 400 "$CLAVE"
 
+echo "VPC propia con una subred pública"
+VPC="$(aws ec2 create-vpc --cidr-block 10.42.0.0/16 \
+  --tag-specifications "ResourceType=vpc,Tags=[{$ETIQUETA},{Key=Name,Value=$NOMBRE}]" \
+  --query Vpc.VpcId --output text)"
+aws ec2 wait vpc-available --vpc-ids "$VPC"
+aws ec2 modify-vpc-attribute --vpc-id "$VPC" --enable-dns-hostnames '{"Value":true}'
+PUERTA="$(aws ec2 create-internet-gateway \
+  --tag-specifications "ResourceType=internet-gateway,Tags=[{$ETIQUETA}]" \
+  --query InternetGateway.InternetGatewayId --output text)"
+aws ec2 attach-internet-gateway --vpc-id "$VPC" --internet-gateway-id "$PUERTA"
+ZONA="$(aws ec2 describe-instance-type-offerings --location-type availability-zone \
+  --filters "Name=instance-type,Values=$TIPO" \
+  --query 'sort_by(InstanceTypeOfferings,&Location)[0].Location' --output text)"
+SUBRED="$(aws ec2 create-subnet --vpc-id "$VPC" --cidr-block 10.42.1.0/24 \
+  --availability-zone "$ZONA" \
+  --tag-specifications "ResourceType=subnet,Tags=[{$ETIQUETA}]" \
+  --query Subnet.SubnetId --output text)"
+aws ec2 modify-subnet-attribute --subnet-id "$SUBRED" --map-public-ip-on-launch
+TABLA="$(aws ec2 create-route-table --vpc-id "$VPC" \
+  --tag-specifications "ResourceType=route-table,Tags=[{$ETIQUETA}]" \
+  --query RouteTable.RouteTableId --output text)"
+aws ec2 create-route --route-table-id "$TABLA" --destination-cidr-block 0.0.0.0/0 \
+  --gateway-id "$PUERTA" >/dev/null
+aws ec2 associate-route-table --route-table-id "$TABLA" --subnet-id "$SUBRED" >/dev/null
+
 echo "Grupo de seguridad: sólo SSH desde $IP/32; la aplicación no se expone a internet"
-VPC="$(aws ec2 describe-vpcs --filters Name=is-default,Values=true \
-  --query 'Vpcs[0].VpcId' --output text)"
 GRUPO="$(aws ec2 create-security-group --group-name "$NOMBRE" \
   --description "Ivo Stock: solo SSH" --vpc-id "$VPC" \
   --tag-specifications "ResourceType=security-group,Tags=[{$ETIQUETA}]" \
@@ -83,7 +109,7 @@ SCRIPT
 
 echo "Instancia $TIPO con Amazon Linux 2023 y Docker"
 INSTANCIA="$(aws ec2 run-instances --image-id "$AMI" --instance-type "$TIPO" \
-  --key-name "$NOMBRE" --security-group-ids "$GRUPO" \
+  --key-name "$NOMBRE" --security-group-ids "$GRUPO" --subnet-id "$SUBRED" \
   --iam-instance-profile "Name=$NOMBRE" --user-data "file://$INICIO" \
   --metadata-options HttpTokens=required \
   --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=30,VolumeType=gp3}' \
