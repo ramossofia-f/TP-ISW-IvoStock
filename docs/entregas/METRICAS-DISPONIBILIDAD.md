@@ -73,7 +73,7 @@ precisión del modelo con datos reales ni los ensayos RNF-02/RNF-07/RNF-09/RNF-1
 ## Estado al 19/11/2026
 
 El último #18 se incorporó en #19 después de ejecutar Update branch en #18. La guarda vuelve
-a preceder siempre al modelo, y ADR-0016 conserva su estado propuesto. En la revisión de #19
+a preceder siempre al modelo, y ADR-0016 conservó su estado propuesto hasta su aceptación del 22/11/2026. En la revisión de #19
 se quitó el segundo login: sólo la API principal inicia/cierra sesiones; métricas valida el
 mismo token y conserva `GET /auth/me`. Una sesión revocada en la API deja de servir en métricas.
 

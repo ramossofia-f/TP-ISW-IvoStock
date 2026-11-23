@@ -114,8 +114,8 @@ def reporte(datos, real=None):
         "# Evaluación del detector de corridas defectuosas",
         "",
         "Registro histórico del clasificador binario del ADR-0015. El "
-        "[ADR-0016 propuesto](../adr/0016-normalidad-global-y-aprendizaje-durable.md) "
-        "implementa normalidad y espera revisión conjunta. Estas cifras no describen ese detector; "
+        "[ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md) "
+        "implementa normalidad y lo reemplazó. Estas cifras no describen ese detector; "
         "los conjuntos, variables y protocolos difieren y no son una comparación controlada.",
         "",
         "Generado por `scripts/ml_entrenar.py` "
