@@ -2,7 +2,10 @@ FROM ghcr.io/astral-sh/uv:0.10.4 AS uv
 FROM python:3.12-slim AS base
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /work
-ENV UV_PROJECT_ENVIRONMENT=/opt/venv PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1
+# El venv es de root y los procesos corren como app: sin bytecode precompilado, cada proceso
+# (incluido cada healthcheck) recompila las dependencias.
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1
 COPY pyproject.toml uv.lock ./
 COPY src ./src
 RUN uv sync --frozen --no-editable
