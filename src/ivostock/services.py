@@ -388,6 +388,36 @@ def list_runs(engine, provider=None, limit=20, offset=0):
     }
 
 
+DEAD_LETTER_RESPONSE = 300
+
+
+def list_dead_letters(engine, store=None, pending_only=False, limit=50, offset=0):
+    """Fallas definitivas (RF-19, tablero de RF-25), la más reciente primero.
+
+    Incluye la publicación y el estado actual del vínculo para decidir si reanudarlo. La respuesta
+    del marketplace se recorta: es evidencia para el operador, no un volcado completo.
+    """
+    with engine.begin() as conn:
+        found = rows(
+            conn,
+            "SELECT d.id,d.link_id,l.store_id,l.item_id,l.sku,l.state AS link_state,d.revision,"
+            "d.quantity,d.http_status,left(d.response,:r) AS response,d.created_at,d.reviewed_at "
+            "FROM dead_letters d JOIN links l ON l.id=d.link_id "
+            "WHERE (CAST(:s AS text) IS NULL OR l.store_id=:s) "
+            "AND (NOT :pending OR d.reviewed_at IS NULL) "
+            "ORDER BY d.id DESC LIMIT :n OFFSET :o",
+            r=DEAD_LETTER_RESPONSE,
+            s=store,
+            pending=pending_only,
+            n=limit + 1,
+            o=offset,
+        )
+    return {
+        "items": [dict(r) for r in found[:limit]],
+        "next_offset": offset + limit if len(found) > limit else None,
+    }
+
+
 def runs_summary(engine, provider=None):
     """Cantidad de corridas por estado (y el total), de un proveedor o de todos."""
     filters = ", ".join(f"count(*) FILTER (WHERE status='{s}') AS {s}" for s in RUN_STATUSES)
