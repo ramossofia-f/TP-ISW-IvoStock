@@ -17,7 +17,7 @@ TP integrador, Ingeniería de Software.
 
 La devolución de la Entrega 1 está incorporada: disponibilidad verificable (RNF-07), criterios de aceptación con K = 2 y forma de verificación, supuestos con plan B, script de medición del feed, infraestructura justificada en los ADRs y documentos en español. Para responder a la observación de alcance excesivo, el MVP se redujo a 2.000 vínculos en dos tiendas y cinco operadores.
 
-Motor de sincronización de inventario desde proveedores HTTP hacia un marketplace simulado. El POC se opera por CLI y conserva snapshots, inventario, trabajo pendiente y evidencia de fallas.
+Motor de sincronización de inventario desde proveedores HTTP hacia un marketplace simulado. El MVP se opera desde la interfaz web, la API autenticada y la CLI, y conserva snapshots, inventario, trabajo pendiente y evidencia de fallas. Se levanta localmente con Docker Compose y se puede desplegar en AWS de forma efímera.
 
 El [PRD](docs/prd/PRD.md) define el producto; el [SRD](docs/srd/SRD.md), su implementación; los [ADRs](docs/adr/README.md), las decisiones; el [roadmap](docs/roadmap/ROADMAP.md), evidencia y próximos hitos.
 
