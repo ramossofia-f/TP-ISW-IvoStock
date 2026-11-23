@@ -88,9 +88,34 @@ una variante.
 
 ## Evidencia
 
-Pendiente de ejecutar en la cuenta temporal de AWS. Se registrará aquí la salida de `desplegar.sh --verificar`
-(servicios sanos, corrida aceptada y snapshot listado en el bucket) y la de
-`destruir_entorno.sh`.
+### Despliegue en el Innovation Sandbox del 22/11/2026
+
+Cuenta temporal de UdeSA (plantilla "Ing del Soft"), región `us-east-2`, commit `cbeb3a8`. No se
+registran el número de cuenta ni la IP del equipo.
+
+- `crear_entorno.sh` creó el bucket privado, el rol con permiso sólo sobre ese bucket, el par de
+  claves, una VPC propia y una instancia `t3.large` con Amazon Linux 2023. Las cuentas del
+  sandbox no traen VPC por defecto, así que el script crea la suya desde el commit `9c82b38`.
+- `desplegar.sh --verificar` levantó 11 servicios sanos: el stack completo menos MinIO. Corrió
+  el recorrido con 10.000 SKU, la tienda T1, el proveedor, la aprobación de 100 vínculos y la
+  ingesta. Resultado: corrida 1 `accepted`, decisión por reglas (`insufficient_history`) y
+  snapshot de 168.193 bytes listado con `aws s3 ls` en el bucket.
+- El `.env` de la instancia no tiene endpoint ni claves de S3: boto3 usa el rol.
+- La instancia exige IMDSv2: un pedido sin token a la metadata devuelve 401.
+- El bucket tiene las cuatro opciones de acceso público bloqueadas. El grupo de seguridad sólo
+  admite el puerto 22 desde la IP del equipo.
+
+El primer intento encontró un defecto que en local no se veía. La imagen no precompilaba el
+bytecode, y como el venv es de root, cada proceso recompilaba las dependencias. En 2 vCPU los
+healthchecks de `publish` y `catalog` superaban los 5 s de timeout. Con `UV_COMPILE_BYTECODE=1`
+(commit `cbeb3a8`), importar `ivostock.db` pasó de 1,29 s a 0,14 s.
+
+`destruir_entorno.sh` terminó la instancia y borró el grupo de seguridad, el par de claves, la
+VPC, el rol y el bucket con sus snapshots. En la primera pasada la VPC no se borró porque
+quedaba la tabla de rutas propia: la consulta que la buscaba no la encontraba. Se corrigió en el
+mismo PR y la segunda pasada borró lo que faltaba. Después se comprobó en `us-east-1` y
+`us-east-2` que no quedaban instancias, VPC, grupos, claves, volúmenes, IP elásticas, buckets ni
+roles. La instancia estuvo prendida unos 50 minutos, con un costo estimado menor a USD 0,10.
 
 ### Ensayo local del 22/11/2026
 

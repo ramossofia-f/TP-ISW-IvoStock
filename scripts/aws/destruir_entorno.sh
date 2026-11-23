@@ -41,7 +41,7 @@ for VPC in $(aws ec2 describe-vpcs --filters Name=tag:Proyecto,Values=ivostock \
     aws ec2 delete-subnet --subnet-id "$SUBRED"
   done
   for TABLA in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC" \
-    --query 'RouteTables[?!Associations[?Main]].RouteTableId' --output text); do
+    --query 'RouteTables[?length(Associations[?Main]) == `0`].RouteTableId' --output text); do
     aws ec2 delete-route-table --route-table-id "$TABLA"
   done
   for PUERTA in $(aws ec2 describe-internet-gateways \
