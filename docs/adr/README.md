@@ -21,5 +21,6 @@ Los ADRs explican contexto, alternativas, decisión, consecuencias y comprobaci�
 | [0015](0015-detector-de-feeds-anomalos.md) | Detector binario y guarda obligatoria (reemplazado por el 0016; la guarda sigue vigente) |
 | [0016](0016-normalidad-global-y-aprendizaje-durable.md) | Normalidad global, inferencia privada y aprendizaje durable |
 | [0017](0017-metricas-y-observador.md) | Métricas internas por minuto y observador de sólo lectura |
+| [0018](0018-despliegue-cloud-efimero.md) | Despliegue efímero en AWS con el mismo Compose y S3 real |
 
 Las mediciones históricas están en la [evidencia E2](../entregas/ENTREGA-2.md). El componente de ML vigente está en el [ADR-0016](0016-normalidad-global-y-aprendizaje-durable.md).

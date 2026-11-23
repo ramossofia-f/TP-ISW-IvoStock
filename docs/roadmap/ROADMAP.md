@@ -18,7 +18,7 @@ El alcance está en el [PRD](../prd/PRD.md); el diseño en el [SRD](../srd/SRD.m
 | 9b | Sesión de usuario, catálogo en segundo plano, proveedor con variantes y monitor | Implementado; pruebas de reanudación del catálogo, aprobación previa a la ingesta, baja de proveedor, fuente inaccesible y credencial revocada |
 | 10 | Cierres abruptos, caída de base y CI | 68 pruebas en Docker y ensayo real aprobados; workflow remoto por comprobar |
 | 11 | Coherencia documental y guía ejecutable | Verificadores y recorrido del README |
-| 12 | Video público de 5–12 minutos y commits de entrega | Commits locales organizados con coautorías del equipo; pendientes push, video y comprobación de CI remoto |
+| 12 | Video público de 5–12 minutos y commits de entrega | Entregado: video enlazado en el README. Desde el tramo MVP el CI remoto corre en cada pull request y en `develop` |
 
 El [registro E2](../entregas/ENTREGA-2.md) contiene los resultados concretos. La existencia de un workflow no acredita que haya ejecutado en el servidor remoto.
 
@@ -43,9 +43,9 @@ El referente coordina el tramo, abre su pull request y responde por su criterio 
 | API de configuración | Implementada sobre `services` ([ADR-0011](../adr/0011-api-de-configuracion.md)); pruebas de integración por endpoint |
 | Segunda tienda reutilizando inventario | Implementada: tiendas aprovisionadas aparte, rotación de la importación ([ADR-0012](../adr/0012-tiendas-aprovisionadas-y-rotacion.md)); prueba de integración de una ingesta que actualiza T1 y T2 |
 | Interfaz de configuración (RF-25) | Implementada y estática ([ADR-0013](../adr/0013-interfaz-estatica.md)), con tablero de corridas; sin verificar en navegador |
-| Recorrido manual en Docker con el feed real, imágenes y CI remoto | Pendiente; ver el [registro del tramo](../entregas/REGISTRO-TRAMO-1.md) |
+| Recorrido manual en Docker con el feed real, imágenes y CI remoto | Hecho: los ensayos con el inventario de Celesa corrieron en Docker ([dos tiendas](../entregas/ENSAYO-DOS-TIENDAS-CELESA.md), [consultas](../entregas/ENSAYO-CONSULTAS-CELESA.md)), y el CI remoto pasa en cada pull request. Antecedentes en el [registro del tramo](../entregas/REGISTRO-TRAMO-1.md) |
 
-Del tramo siguiente ya están el tablero de corridas y la búsqueda de sugerencias por SKU; sigue pendiente modificar un proveedor (RF-04).
+Del tramo siguiente están el tablero de corridas, la búsqueda de sugerencias por SKU y, desde el 19/11, la modificación de proveedor (RF-04): `PATCH /providers/{id}`, `provider-edit` y el formulario de la interfaz.
 
 ### Plan del tramo 11/11–17/11 (ML)
 
@@ -104,6 +104,16 @@ cliente desde el instante programado. Con el inventario real de Celesa, sobre 2.
 el motor publicando (dos ingestas y 2.835 publicaciones durante la medición), cumple RNF-09: p95 de
 18 ms, p99 de 20 ms y ninguna consulta con error. Detalle por tipo de consulta y recursos en el
 [reporte del ensayo](../entregas/ENSAYO-CONSULTAS-CELESA.md).
+
+### Readiness cloud (ADR-0018)
+
+El mismo Compose se despliega en una cuenta temporal de AWS (Innovation Sandbox de UdeSA), con
+snapshots en S3 real mediante el rol de la instancia y sin MinIO. Los scripts de `scripts/aws/`
+crean, despliegan y destruyen el entorno, y el job `despliegue` del CI valida scripts y
+configuración. El 22/11 se desplegó en `us-east-2`: 11 servicios sanos, una corrida aceptada y el
+snapshot en el bucket. Después se destruyó todo y se comprobó que la cuenta quedó vacía. El
+despliegue encontró un defecto de la imagen, el bytecode sin precompilar, que hacía fallar los
+healthchecks en 2 vCPU. Evidencia y costos en la [guía de despliegue](../despliegue/AWS.md).
 
 ## Preparación de la presentación E2
 

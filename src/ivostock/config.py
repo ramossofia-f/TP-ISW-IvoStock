@@ -18,9 +18,11 @@ def parse_stores(value):
 @dataclass(frozen=True)
 class Settings:
     database_url: str
-    s3_endpoint: str
-    s3_access_key: str
-    s3_secret_key: str
+    # Sin endpoint ni claves se usa S3 de AWS con las credenciales del entorno (rol de la
+    # instancia); con ellos, un S3 compatible como MinIO en local.
+    s3_endpoint: str | None
+    s3_access_key: str | None
+    s3_secret_key: str | None
     s3_bucket: str
     simulator_url: str
     simulator_token: str
@@ -28,18 +30,20 @@ class Settings:
     lease_seconds: int
     # Tiendas del marketplace para las que hay credenciales preconfiguradas (RF-05).
     marketplace_stores: tuple[str, ...] = ()
+    s3_region: str = "us-east-1"
 
     @classmethod
     def from_env(cls):
         return cls(
             os.environ["DATABASE_URL"],
-            os.environ["S3_ENDPOINT"],
-            os.environ["S3_ACCESS_KEY"],
-            os.environ["S3_SECRET_KEY"],
+            os.getenv("S3_ENDPOINT") or None,
+            os.getenv("S3_ACCESS_KEY") or None,
+            os.getenv("S3_SECRET_KEY") or None,
             os.getenv("S3_BUCKET", "snapshots"),
             os.getenv("SIMULATOR_URL", "http://simulator:8001"),
             os.environ["SIMULATOR_TOKEN"],
             os.environ["SIMULATOR_ADMIN_TOKEN"],
             int(os.getenv("TASK_LEASE_SECONDS", "30")),
             parse_stores(os.getenv("MARKETPLACE_STORES")),
+            os.getenv("S3_REGION") or "us-east-1",
         )

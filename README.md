@@ -17,7 +17,7 @@ TP integrador, Ingeniería de Software.
 
 La devolución de la Entrega 1 está incorporada: disponibilidad verificable (RNF-07), criterios de aceptación con K = 2 y forma de verificación, supuestos con plan B, script de medición del feed, infraestructura justificada en los ADRs y documentos en español. Para responder a la observación de alcance excesivo, el MVP se redujo a 2.000 vínculos en dos tiendas y cinco operadores.
 
-Motor de sincronización de inventario desde proveedores HTTP hacia un marketplace simulado. El POC se opera por CLI y conserva snapshots, inventario, trabajo pendiente y evidencia de fallas.
+Motor de sincronización de inventario desde proveedores HTTP hacia un marketplace simulado. El MVP se opera desde la interfaz web, la API autenticada y la CLI, y conserva snapshots, inventario, trabajo pendiente y evidencia de fallas. Se levanta localmente con Docker Compose y se puede desplegar en AWS de forma efímera.
 
 El [PRD](docs/prd/PRD.md) define el producto; el [SRD](docs/srd/SRD.md), su implementación; los [ADRs](docs/adr/README.md), las decisiones; el [roadmap](docs/roadmap/ROADMAP.md), evidencia y próximos hitos.
 
@@ -51,6 +51,18 @@ También se puede ejecutar `make up`. La configuración inicial genera secretos 
 | `user`, `cli` | Perfil `tools`: sesión de usuario y CLI de backend, con `docker compose run --rm` |
 
 La interfaz de configuración (RF-25) se sirve desde la propia API en <http://localhost:8000/>: se ingresa con una cuenta de `data/operadores.txt` (ver [Cuentas de operador](#cuentas-de-operador)) y permite dar de alta y baja proveedores, incorporar tiendas, aprobar vínculos, apagarlos o reanudarlos y seguir las corridas de ingesta. Es HTML y JavaScript estáticos, sin build ([ADR-0013](docs/adr/0013-interfaz-estatica.md)). La CLI y la sesión `usuario>` siguen disponibles para ensayo y operación.
+
+## Despliegue en AWS
+
+El sistema también corre en la nube con el mismo Compose ([ADR-0018](docs/adr/0018-despliegue-cloud-efimero.md)): una instancia EC2 en una cuenta temporal de AWS levanta los mismos servicios y guarda los snapshots en un bucket S3 real en lugar de MinIO, con las credenciales del rol de la instancia y sin claves en `.env`. Es un entorno efímero de demostración; la corrección sigue siendo en local.
+
+```sh
+AWS_PROFILE=PERFIL scripts/aws/crear_entorno.sh      # bucket, rol, clave SSH, grupo de seguridad y EC2
+scripts/aws/desplegar.sh --verificar                  # el commit actual, con un recorrido de punta a punta
+AWS_PROFILE=PERFIL scripts/aws/destruir_entorno.sh   # al terminar
+```
+
+La aplicación no se expone a internet: se usa por túnel SSH. Pasos, costos y evidencia en [docs/despliegue/AWS.md](docs/despliegue/AWS.md).
 
 ## Cuentas de operador
 

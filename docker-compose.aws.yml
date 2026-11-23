@@ -1,0 +1,11 @@
+# Despliegue en AWS (ADR-0018): se combina con docker-compose.yml.
+#   docker compose -f docker-compose.yml -f docker-compose.aws.yml up --build -d --wait
+# Los snapshots van a un bucket de S3 real con las credenciales del rol de la instancia, así
+# que MinIO no se levanta. Los puertos siguen enlazados a 127.0.0.1: se accede por túnel SSH.
+services:
+  minio:
+    profiles: ["minio-local"]
+  init:
+    depends_on: !override
+      postgres:
+        condition: service_healthy
