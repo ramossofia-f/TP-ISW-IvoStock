@@ -6,6 +6,7 @@ Entrega: 24/11/2026. El alcance está en el [PRD](../prd/PRD.md), el diseño en 
 
 | Comprobación | Resultado | Evidencia |
 |---|---|---|
+| Suite automatizada al cierre | 376 pruebas: 193 unitarias y 183 de integración contra PostgreSQL y S3 | Jobs `checks` e `integration` sobre `develop` (`b82c183`) |
 | Pruebas unitarias (`pytest -m "not integration"`) en el CI remoto | 193 aprobadas | Job `checks` sobre `develop` (`b82c183`) |
 | Pruebas unitarias e integración dentro de Docker en el CI remoto | 375 aprobadas, 1 omitida | Job `integration` sobre `develop` (`b82c183`) |
 | Validación de despliegue en el CI remoto | Aprobada | Job `despliegue` sobre `develop` |
@@ -51,4 +52,4 @@ Durante el MVP no hizo falta aplicar el orden de recorte del supuesto S-08: RF-0
 
 ## Video
 
-PENDIENTE: link de YouTube. Muestra el recorrido de usuario y, por separado, el de administración, incluida la activación del ML en la corrida 11.
+https://youtu.be/EWXwMQDCltY. Muestra el recorrido de usuario y, por separado, el de administración, incluida la activación del ML en la corrida 11.
