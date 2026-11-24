@@ -64,10 +64,16 @@ Implementación verificada localmente en el [registro del detector](../entregas/
 300 pruebas Python aprobadas en Docker tras restablecer la guarda obligatoria y aviso comprobado
 con Node.js en el host. La
 [evaluación sintética vigente](../entregas/ML-NORMALIDAD-EVALUACION.md) declara detecciones y falsas
-cuarentenas. Pendientes integración en la rama de entrega, revisión del equipo y CI remoto.
+cuarentenas. Integrado en `develop` por los PR #18 y #27, con revisión del equipo y CI remoto.
 
-Para el video E3 también queda pendiente mostrar la [activación tras diez aceptados del proveedor](../entregas/ENTREGA-3-ML-PENDIENTES.md):
-si todavía no hay suficientes runs, el modelo operativo se entrega al procesar el feed n.º 10 aceptado.
+Suite al cierre de la Entrega 3 (23/11/2026, sobre `develop`): 376 pruebas automatizadas, 193
+unitarias (192 aprobadas y 1 omitida con `pytest -m "not integration"`) y 183 de integración
+contra PostgreSQL y S3, que corren en el job `integration` del CI.
+
+La [activación tras diez aceptados del proveedor](../entregas/ENTREGA-3-ML-PENDIENTES.md) se grabó
+para el video E3 sobre el commit `219b928`: `ml-report` con 9 de 10 observaciones, corrida 10
+aceptada por la guarda, nueva versión del modelo con 10 observaciones y corrida 11 decidida con
+`decision_source: ml`.
 
 Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas.
 
@@ -79,8 +85,9 @@ observador es otro microservicio de sólo lectura, sin histórico propio ni aler
 de efecto externo se calculan por tienda, separados de disponibilidad. Diseño y comparación con
 UptimeRobot en el [ADR-0017](../adr/0017-metricas-y-observador.md).
 
-La campaña real de 24 horas queda pendiente. La instrumentación no se declara como evidencia de
-haber cumplido los umbrales. El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
+La campaña real de 24 horas se ejecutó en el laboratorio del 19/11 al 20/11/2026 sobre la revisión
+`7600ae5`: 1.440 de 1.440 muestras y 100 % para API y motor, por encima del 99 %
+([resultado](../entregas/RNF07-RESULTADO-COMPLETO-20261119.md), PR #31). El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
 detalla las comprobaciones ejecutadas y las limitaciones.
 
 ### Ensayo de dos tiendas (RNF-02 y RNF-15)

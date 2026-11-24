@@ -91,9 +91,9 @@ ambas pasaron en la suite Linux de Docker.
 
 Los [ensayos de dos tiendas (#21)](https://github.com/ramossofia-f/TP-ISW-IvoStock/pull/21)
 y [consultas (#25)](https://github.com/ramossofia-f/TP-ISW-IvoStock/pull/25) ya publican evidencia
-con Celesa. **RNF-07 es la única medición pendiente.** La [preparación del laboratorio](RNF07-LABORATORIO.md)
-incluye registro de una ventana inmutable y exportación con faltantes; no acredita una campaña
-iniciada ni terminada. Los nuevos casos de prueba comprueban rechazo de sobrescritura,
+con Celesa. La campaña RNF-07 se ejecutó del 19/11 al 20/11/2026: 1.440 de 1.440 muestras y
+100 % para API y motor ([resultado](RNF07-RESULTADO-COMPLETO-20261119.md)). La [preparación del laboratorio](RNF07-LABORATORIO.md)
+incluye registro de una ventana inmutable y exportación con faltantes. Los nuevos casos de prueba comprueban rechazo de sobrescritura,
 exportación anticipada y conservación de los cortes al exportar después de reiniciar:
 **tres pruebas aprobadas en Docker y en el host**, agregadas después de la suite completa.
 

@@ -14,6 +14,7 @@ TP integrador, Ingeniería de Software.
 |---|---|---|
 | 1. Diseño (20/09/2026, aprobada) | PRD, roadmap y ADRs entregados en el commit [`354b155`](https://github.com/ramossofia-f/TP-ISW-IvoStock/tree/354b155) | https://www.youtube.com/watch?v=zP0HYAmsSoY |
 | 2. POC y SRD (27/10/2026) | [PRD](docs/prd/PRD.md) revisado con la devolución, [SRD](docs/srd/SRD.md), [ADRs](docs/adr/README.md), [roadmap](docs/roadmap/ROADMAP.md), [evidencia](docs/entregas/ENTREGA-2.md) y el POC descripto abajo | https://youtu.be/4_mCiduyV24 |
+| 3. MVP (24/11/2026) | MVP operable por [interfaz web](src/ivostock/static/), API autenticada y CLI; ML con guarda obligatoria ([ADR-0016](docs/adr/0016-normalidad-global-y-aprendizaje-durable.md)); [mediciones](docs/entregas/) de RNF-02, RNF-15, RNF-09 y RNF-07; [despliegue en AWS](docs/despliegue/AWS.md) | https://youtu.be/EWXwMQDCltY |
 
 La devolución de la Entrega 1 está incorporada: disponibilidad verificable (RNF-07), criterios de aceptación con K = 2 y forma de verificación, supuestos con plan B, script de medición del feed, infraestructura justificada en los ADRs y documentos en español. Para responder a la observación de alcance excesivo, el MVP se redujo a 2.000 vínculos en dos tiendas y cinco operadores.
 
@@ -358,14 +359,15 @@ Para RNF-07 mantener el sistema encendido 24 horas y consultar el observador cad
 sesión vigente; el histórico lo persiste exclusivamente `metrics`. Al terminar, consultar
 `/metrics/summary?start=INICIO_ISO&end=FIN_ISO` y conservar el resultado de la ventana elegida como
 evidencia de entrega antes de que expire su retención. El observador no guarda archivos ni acredita
-su propia continuidad histórica. La campaña de 24 horas sigue pendiente de ejecución;
-las pruebas automatizadas no la sustituyen.
+su propia continuidad histórica. La campaña de 24 horas se ejecutó en el laboratorio
+([resultado](docs/entregas/RNF07-RESULTADO-COMPLETO-20261119.md)); las pruebas automatizadas no la sustituyen.
 
 Para fijar una ventana única que conserve los cortes de un equipo que se reinicia, usar
 `scripts/medir_disponibilidad.py start` y, al terminar, `report`. El comando guarda las fechas y
 exporta resumen e histórico sin sobrescribir evidencia. La [preparación del laboratorio](docs/entregas/RNF07-LABORATORIO.md)
 detalla el inicio límite del 22/11, la recuperación y el tratamiento del apagado diario. Los
-reportes de las otras mediciones están en los PR #21 y #25; RNF-07 sigue pendiente de ejecución.
+reportes de las otras mediciones están en los PR #21 y #25. RNF-07 cumple: 1.440 de 1.440 muestras
+y 100 % para API y motor en 24 horas de reloj ([resultado](docs/entregas/RNF07-RESULTADO-COMPLETO-20261119.md), PR #31).
 
 ## Pruebas
 
