@@ -11,6 +11,8 @@ from ivostock.db import execute, ownership, rows
 from ivostock.failpoints import checkpoint
 from ivostock.feed import parse, suspicion
 from ivostock.ingesta.fuente import descargar as fetch
+from ivostock.ml.client import evaluate
+from ivostock.ml.repository import observe
 from ivostock.storage import Snapshots
 
 log = logging.getLogger("ivostock.ingesta")
@@ -116,7 +118,12 @@ def ingest(engine, provider_id, replay_of=None, scheduled=False):
                 trace = {"component": "ingest", "run": run_id, "provider": provider_id}
                 if metrics["parse_alert"]:
                     log.warning("Más del 10 por ciento de filas con error de parseo", extra=trace)
-                if score["p"] > 0.5:
+                decision = evaluate(provider_id, metrics)
+                metrics["ml"] = decision
+                log.info("Inventario evaluado", extra={**trace, "decision_source": decision["source"],
+                         "model_version": decision["version"], "status": "accepted"
+                         if decision["accepted"] else "quarantined"})
+                if not decision["accepted"]:
                     log.warning("Corrida en cuarentena", extra={**trace, "status": "quarantined"})
                     execute(
                         conn,
@@ -151,6 +158,8 @@ def ingest(engine, provider_id, replay_of=None, scheduled=False):
                     p=provider_id,
                     r=run_id,
                 )
+                observe(conn, run_id, provider_id, metrics)
+                checkpoint("ml_observation_in_transaction")
             checkpoint("accepted_committed")
             log.info("Corrida aceptada", extra={**trace, "status": "accepted"})
             return {"id": run_id, "status": "accepted", "sku": len(feed.stock)}

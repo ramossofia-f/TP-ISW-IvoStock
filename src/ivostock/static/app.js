@@ -13,6 +13,7 @@ const TOKEN_KEY = 'ivostock.token';
 const POLL_MS = 5000;
 const PAGE_SIZE = 50;
 const RUNS_PAGE_SIZE = 20;
+const DEAD_LETTERS_PAGE_SIZE = 20;
 const SUGGESTION_LIMIT = 50;
 const SAMPLE_ROWS = 10;
 
@@ -21,16 +22,21 @@ const state = {
     view: null,
     poll: null,
     pollBusy: false,
+    noticePoll: null,
+    noticeBusy: false,
     busy: 0,
     toastTimer: null,
     availableKey: '',
     providers: [],
     providerNames: new Map(),
+    editingProvider: null,
     suggestions: null,
     linksOffset: 0,
     nextOffset: null,
     runsOffset: 0,
     nextRunsOffset: null,
+    deadLettersOffset: 0,
+    nextDeadLettersOffset: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -44,7 +50,7 @@ const fmtPercent = (fraction) => `${fmtNumber(fraction * 100)} %`;
 function fmtDate(iso) {
     if (!iso) return '—';
     const date = new Date(iso);
-    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('es-AR');
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('es-AR', { hour12: false });
 }
 
 function shorten(text, max = 120) {
@@ -209,7 +215,7 @@ function stopPolling() {
     state.poll = null;
 }
 
-function startPolling(task) {
+function startPolling(task, interval = POLL_MS) {
     stopPolling();
     state.poll = setInterval(async () => {
         if (state.pollBusy) return;
@@ -221,7 +227,7 @@ function startPolling(task) {
         } finally {
             state.pollBusy = false;
         }
-    }, POLL_MS);
+    }, interval);
 }
 
 function showView(name) {
@@ -240,6 +246,8 @@ const LOADERS = {
     vinculacion: () => loadLinkingFilters(),
     vinculos: () => loadLinksView(),
     corridas: () => loadRunsView(),
+    fallas: () => loadDeadLettersView(),
+    monitoreo: () => loadMetricsView(),
 };
 
 function switchView(name) {
@@ -254,11 +262,16 @@ function startSession(username) {
     $('who').textContent = username;
     $('main-nav').classList.remove('hidden');
     switchView('proveedores');
+    startQuarantineNotices();
 }
 
 function endSession(message) {
     const wasActive = state.user !== null;
     stopPolling();
+    if (state.noticePoll) clearInterval(state.noticePoll);
+    state.noticePoll = null;
+    $('quarantine-notice').replaceChildren();
+    $('quarantine-notice').classList.add('hidden');
     sessionStorage.removeItem(TOKEN_KEY);
     state.user = null;
     state.view = null;
@@ -317,8 +330,39 @@ async function restoreSession() {
 
 // --- Proveedores --------------------------------------------------------------------------
 
+function renderQuarantineNotices(providers) {
+    const notice = $('quarantine-notice');
+    const affected = providers.filter((p) => p.active && p.quarantine_run_id !== null);
+    notice.replaceChildren(...affected.map((p) => h('p', {},
+        `El proveedor ${p.name} tiene la corrida #${p.quarantine_run_id} en cuarentena. ` +
+        'Se conserva el último inventario aceptado. Revisá el tablero de Corridas.',
+    )));
+    notice.classList.toggle('hidden', affected.length === 0);
+}
+
+function startQuarantineNotices() {
+    if (state.noticePoll) clearInterval(state.noticePoll);
+    state.noticePoll = setInterval(async () => {
+        if (!state.user || state.noticeBusy) return;
+        const token = sessionStorage.getItem(TOKEN_KEY);
+        state.noticeBusy = true;
+        try {
+            const providers = await api('GET', '/providers', { quiet: true });
+            // Una respuesta de una sesión anterior no puede volver a mostrar sus avisos.
+            if (state.user && sessionStorage.getItem(TOKEN_KEY) === token) {
+                renderQuarantineNotices(providers);
+            }
+        } catch {
+            // Conserva el aviso conocido; el próximo sondeo reintenta.
+        } finally {
+            state.noticeBusy = false;
+        }
+    }, POLL_MS);
+}
+
 async function loadProviders() {
     const providers = await api('GET', '/providers');
+    if (state.user) renderQuarantineNotices(providers);
     state.providers = providers;
     state.providerNames = new Map(providers.map((p) => [p.id, p.name]));
     fillBody(
@@ -333,7 +377,16 @@ async function loadProviders() {
                 td(fmtDate(p.next_run_at)),
                 td(p.last_accepted_run === null ? '—' : `#${p.last_accepted_run}`),
                 h('td', { title: p.last_error || null }, shorten(p.last_error, 120) || '—'),
-                td(p.active ? button('Dar de baja', () => disableProvider(p), 'danger') : ''),
+                td(
+                    p.active
+                        ? h(
+                              'div',
+                              { class: 'actions' },
+                              button('Modificar', () => openEditProvider(p), 'secondary'),
+                              button('Dar de baja', () => disableProvider(p), 'danger'),
+                          )
+                        : '',
+                ),
             ),
         ),
         'Todavía no hay proveedores.',
@@ -425,6 +478,54 @@ function renderProviderResult(r) {
     }
     box.replaceChildren(...parts);
     box.classList.remove('hidden');
+}
+
+// RF-04: la API nunca devuelve la URL, así que el campo arranca vacío y vacío la conserva.
+function openEditProvider(provider) {
+    state.editingProvider = provider;
+    $('edit-titulo').textContent = `Modificar «${provider.name}» (#${provider.id})`;
+    $('edit-nombre').value = provider.name;
+    $('edit-url').value = '';
+    $('edit-validation').classList.add('hidden');
+    $('form-editar-proveedor').classList.remove('hidden');
+    $('edit-nombre').focus();
+}
+
+function closeEditProvider() {
+    state.editingProvider = null;
+    $('form-editar-proveedor').reset();
+    $('form-editar-proveedor').classList.add('hidden');
+}
+
+async function onEditProvider(event) {
+    event.preventDefault();
+    const provider = state.editingProvider;
+    if (!provider) return;
+    const box = $('edit-validation');
+    box.classList.add('hidden');
+    const body = {};
+    const name = $('edit-nombre').value.trim();
+    const url = $('edit-url').value.trim();
+    if (name !== provider.name) body.name = name;
+    if (url) body.url = url;
+    if (Object.keys(body).length === 0) {
+        showInline(box, 'No hay cambios para guardar.', 'warn');
+        return;
+    }
+    let result;
+    try {
+        result = await api('PATCH', `/providers/${Number(provider.id)}`, { body, silent: true });
+    } catch (error) {
+        showInline(box, error.message, 'error');
+        return;
+    }
+    closeEditProvider();
+    let message = result.source_validated
+        ? `«${result.name}» actualizado: fuente nueva validada con ${fmtNumber(result.sku)} SKU.`
+        : `«${result.name}» actualizado.`;
+    if (result.parse_alert) message += ' Alerta: supera el 10 % de errores de parseo.';
+    toast(message);
+    await guard(loadProviders)();
 }
 
 async function disableProvider(provider) {
@@ -796,9 +897,9 @@ async function loadRunsView() {
 function runDetail(run) {
     const m = run.metrics;
     if (run.error) return run.error;
+    if (run.status === 'quarantined') return 'Cambio sospechoso respecto de la corrida anterior.';
     if (m.reused_inventory) return 'Fuente sin cambios: se reutilizó el inventario.';
     if (m.parse_alert) return 'Más del 10 % de filas con error de parseo.';
-    if (run.status === 'quarantined') return 'Cambio sospechoso respecto de la corrida anterior.';
     return '';
 }
 
@@ -853,6 +954,128 @@ async function loadRuns(offset, quiet = false) {
     $('btn-next-runs').disabled = page.next_offset === null;
 }
 
+// --- Fallas definitivas (tablero de RF-25) -------------------------------------------------
+
+async function loadDeadLettersView() {
+    const stores = await api('GET', '/stores');
+    setOptions($('fallas-tienda'), [
+        { value: '', label: 'Todas las tiendas' },
+        ...stores.map((s) => ({ value: s.id, label: s.id })),
+    ]);
+    await loadDeadLetters(0);
+    startPolling(() => loadDeadLetters(state.deadLettersOffset, true));
+}
+
+function deadLetterStatus(failure) {
+    if (failure.reviewed_at) return [`Revisada ${fmtDate(failure.reviewed_at)}`, 'muted'];
+    if (failure.link_state === 'error') return ['Esperando revisión', 'bad'];
+    return ['Sin revisar', 'warn'];
+}
+
+async function loadDeadLetters(offset, quiet = false) {
+    const page = await api('GET', '/deadletters', {
+        query: {
+            store: $('fallas-tienda').value,
+            pending_only: $('fallas-pendientes').checked,
+            limit: DEAD_LETTERS_PAGE_SIZE,
+            offset,
+        },
+        quiet,
+    });
+    state.deadLettersOffset = offset;
+    state.nextDeadLettersOffset = page.next_offset;
+    fillBody(
+        $('table-fallas'),
+        page.items.map((failure) => {
+            const [label, cls] = deadLetterStatus(failure);
+            const canResume = failure.link_state === 'error' && !failure.reviewed_at;
+            return h(
+                'tr',
+                {},
+                td(fmtDate(failure.created_at)),
+                td(`#${failure.link_id}`),
+                td(failure.store_id),
+                td(failure.item_id),
+                td(failure.sku),
+                tdNum(failure.quantity),
+                td(failure.http_status === null ? '—' : String(failure.http_status)),
+                h('td', { title: failure.response || null }, shorten(failure.response, 80) || '—'),
+                td(h('span', { class: cls }, label)),
+                td(canResume ? button('Reanudar', () => resumeDeadLetter(failure), 'secondary') : ''),
+            );
+        }),
+        $('fallas-pendientes').checked ? 'No hay fallas sin revisar.' : 'Todavía no hay fallas.',
+    );
+    $('current-fallas-page').textContent = String(Math.floor(offset / DEAD_LETTERS_PAGE_SIZE) + 1);
+    $('btn-prev-fallas').disabled = offset === 0;
+    $('btn-next-fallas').disabled = page.next_offset === null;
+}
+
+async function resumeDeadLetter(failure) {
+    try {
+        await api('POST', `/links/${Number(failure.link_id)}/resume`);
+        toast(`Vínculo #${failure.link_id} reanudado: se vuelve a publicar su stock deseado.`);
+    } catch {
+        return;
+    }
+    await guard(() => loadDeadLetters(state.deadLettersOffset))();
+}
+
+// --- Monitoreo: datos numéricos, sin alertas ni evaluación visual de umbrales ----------------
+
+async function loadMetricsView() {
+    await loadMetrics();
+    startPolling(() => loadMetrics(true), 60000);
+}
+
+async function loadMetrics(quiet = false) {
+    const [current, summary] = await Promise.all([
+        api('GET', '/metrics/current', { quiet }),
+        api('GET', '/metrics/summary', { quiet }),
+    ]);
+    $('metricas-muestra').textContent =
+        `Última muestra: ${fmtDate(current.minute)} · Antigüedad: ${fmtNumber(current.age_seconds)} s`;
+    $('metricas-periodo').textContent =
+        `${fmtDate(summary.start)} a ${fmtDate(summary.end)} · ` +
+        `${fmtNumber(summary.recorded_samples)} muestras de ${fmtNumber(summary.expected_samples)} · ` +
+        `${fmtNumber(summary.missing_samples)} faltantes`;
+    fillBody($('table-disponibilidad'), Object.entries(summary.availability).map(([name, value]) =>
+        h('tr', {}, td(name), tdNum(value.successful_samples), tdNum(value.availability_percent)),
+    ), 'Sin muestras.');
+    const minutes = (seconds) => seconds === null ? null : seconds / 60;
+    fillBody($('table-publicacion'), summary.publication.map((store) =>
+        h('tr', {}, td(store.store_id), tdNum(store.samples),
+            tdNum(minutes(store.p95_seconds)), tdNum(minutes(store.p99_seconds)),
+            tdNum(store.pending), tdNum(store.unknown_duration)),
+    ), 'Sin tiendas.');
+    fillBody($('table-heartbeats'), Object.entries(current.workers).map(([name, worker]) =>
+        h('tr', {}, td(name), tdNum(Number(worker.available)),
+            td(fmtDate(worker.last_seen_at)), tdNum(worker.age_seconds)),
+    ), 'Sin heartbeats.');
+    renderMLMetrics(current);
+}
+
+function renderMLMetrics(current) {
+    const ml = current.state?.ml || {};
+    const components = current.state?.components || {};
+    const model = ml.active_model;
+    const flag = (value) => value === undefined || value === null ? null : Number(value);
+    fillBody($('table-ml-estado'), [
+        h('tr', {}, td('Configurado (1/0)'), tdNum(flag(ml.configured))),
+        h('tr', {}, td('Servicio activo (1/0)'), tdNum(flag(components.ml?.available))),
+        h('tr', {}, td('Inferencia lista (1/0)'), tdNum(flag(components.ml_ready?.available))),
+        h('tr', {}, td('Entrenador activo (1/0)'), tdNum(flag(current.workers['ml-train']?.available))),
+        h('tr', {}, td('Versión activa'), h('td', { title: model?.version || null }, model?.version ? shorten(model.version, 20) : '—')),
+        h('tr', {}, td('Mínimo de observaciones por proveedor'), tdNum(model?.min_runs)),
+        h('tr', {}, td('Observaciones aceptadas'), tdNum(ml.learning?.accepted_observations)),
+        h('tr', {}, td('Aprendizajes pendientes'), tdNum(ml.learning?.pending)),
+        h('tr', {}, td('Último entrenamiento'), td(fmtDate(ml.learning?.last_training))),
+    ], 'Sin muestras.');
+    fillBody($('table-ml-proveedores'), Object.entries(model?.counts || {}).map(([provider, count]) =>
+        h('tr', {}, td(provider), tdNum(count)),
+    ), 'Sin observaciones incorporadas a una versión.');
+}
+
 // --- Inicio -------------------------------------------------------------------------------
 
 function init() {
@@ -862,6 +1085,8 @@ function init() {
         link.addEventListener('click', () => switchView(link.dataset.view));
     }
     $('form-proveedor').addEventListener('submit', guard(onCreateProvider));
+    $('form-editar-proveedor').addEventListener('submit', guard(onEditProvider));
+    $('edit-cancelar').addEventListener('click', closeEditProvider);
     $('btn-incorporar').addEventListener('click', guard(onIncorporate));
     $('btn-buscar-sku').addEventListener('click', guard(onSearch));
     $('btn-aprobar-seleccion').addEventListener('click', guard(onApproveSelection));
@@ -887,6 +1112,16 @@ function init() {
     $('btn-next-runs').addEventListener(
         'click',
         guard(() => loadRuns(state.nextRunsOffset)),
+    );
+    $('fallas-tienda').addEventListener('change', guard(() => loadDeadLetters(0)));
+    $('fallas-pendientes').addEventListener('change', guard(() => loadDeadLetters(0)));
+    $('btn-prev-fallas').addEventListener(
+        'click',
+        guard(() => loadDeadLetters(Math.max(0, state.deadLettersOffset - DEAD_LETTERS_PAGE_SIZE))),
+    );
+    $('btn-next-fallas').addEventListener(
+        'click',
+        guard(() => loadDeadLetters(state.nextDeadLettersOffset)),
     );
     guard(restoreSession)();
 }

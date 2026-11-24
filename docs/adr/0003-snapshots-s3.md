@@ -1,10 +1,14 @@
 # ADR-0003: Snapshots en almacenamiento S3
 
-Estado: aceptado. Fecha: 25/10/2026.
+Estado: aceptado. Fecha: 25/10/2026. Alternativas desarrolladas el 18/11/2026.
 
 ## Contexto y alternativas
 
-Cada descarga debe conservar sus bytes para reproducción y diagnóstico. Las opciones son blobs en PostgreSQL, archivos en un volumen compartido o almacenamiento de objetos.
+Cada descarga debe conservar sus bytes para reproducir la corrida y diagnosticarla. Un feed real pesa unos 3,9 MB y, con una corrida cada 300 minutos, son unos 19 MB por día y por proveedor. Se compararon tres alternativas:
+
+- **Blobs en PostgreSQL.** El snapshot entraría en la misma transacción que la corrida y habría un solo respaldo. Pero la base crecería con datos crudos que nunca cambian, lo que encarece respaldos, vacuum y restauraciones del estado transaccional, que es chico y cambia seguido.
+- **Archivos en un volumen compartido.** No agrega servicios. Pero obliga a que todos los procesos monten el mismo disco, lo que los ata a una máquina, y no ofrece escritura condicional atómica: dos procesos podrían pisar el mismo archivo. El respaldo sigue siendo aparte de la base.
+- **Almacenamiento de objetos con interfaz S3.** Una clave derivada del SHA-256 con escritura condicional hace que un snapshot no pueda reemplazarse, cualquier proceso lo lee por red y la misma interfaz sirve para un proveedor cloud. A cambio, es otro servicio que operar y no comparte transacción con la base: el objeto se escribe antes del commit y puede quedar un objeto sin corrida.
 
 ## Decisión
 

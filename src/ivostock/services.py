@@ -76,8 +76,8 @@ def require_provider(engine, provider, active=True):
         raise Conflict("El proveedor está dado de baja")
 
 
-def add_provider(engine, name, url):
-    """Valida la fuente y guarda su vista previa; la primera ingesta queda a 300 minutos."""
+def validate_source(url):
+    """Descarga la fuente y aplica el contrato `SKU;stock` (RF-11); la usan alta y modificación."""
     try:
         raw = fetch(url)
     except httpx.HTTPStatusError as exc:
@@ -86,9 +86,31 @@ def add_provider(engine, name, url):
         # El texto de estas excepciones puede incluir la URL: sólo se informa su tipo.
         raise UpstreamError(f"No se pudo descargar la fuente ({type(exc).__name__})") from None
     try:
-        feed = parse(raw)
+        return parse(raw)
     except UnicodeError:
         raise ValueError("La fuente no está codificada en UTF-8") from None
+
+
+def _write_preview(conn, provider, feed):
+    with conn.connection.driver_connection.cursor().copy(
+        "COPY provider_preview(provider_id,sku,quantity) FROM STDIN"
+    ) as copy:
+        for sku, quantity in feed.stock.items():
+            copy.write_row((provider, sku, quantity))
+
+
+def _source_summary(feed):
+    return {
+        "sku": len(feed.stock),
+        "parse_error_rate": feed.error_rate,
+        "parse_alert": feed.alert,
+        "preview": list(feed.stock.items())[:5],
+    }
+
+
+def add_provider(engine, name, url):
+    """Valida la fuente y guarda su vista previa; la primera ingesta queda a 300 minutos."""
+    feed = validate_source(url)
     try:
         with engine.begin() as conn:
             provider = rows(
@@ -97,11 +119,7 @@ def add_provider(engine, name, url):
                 n=name,
                 u=url,
             )[0]
-            with conn.connection.driver_connection.cursor().copy(
-                "COPY provider_preview(provider_id,sku,quantity) FROM STDIN"
-            ) as copy:
-                for sku, quantity in feed.stock.items():
-                    copy.write_row((provider["id"], sku, quantity))
+            _write_preview(conn, provider["id"], feed)
             stores = rows(
                 conn, "SELECT id FROM stores WHERE import_finished_at IS NOT NULL ORDER BY id"
             )
@@ -116,14 +134,53 @@ def add_provider(engine, name, url):
     return {
         "id": provider["id"],
         "status": "validated",
-        "sku": len(feed.stock),
-        "parse_error_rate": feed.error_rate,
-        "parse_alert": feed.alert,
-        "preview": list(feed.stock.items())[:5],
+        **_source_summary(feed),
         "awaiting_first_ingest": True,
         "next_run_at": provider["next_run_at"],
         "suggestions": found,
     }
+
+
+def update_provider(engine, provider, name=None, url=None):
+    """RF-04: cambia nombre o URL; una URL nueva se valida igual que en el alta.
+
+    El inventario aceptado y los vínculos no cambian: la próxima ingesta compara la fuente nueva
+    contra el último inventario aceptado y la guarda la pone en cuarentena si difiere demasiado.
+    Se toma el mismo lock que la ingesta para no cambiar la fuente a mitad de una corrida. La
+    respuesta nunca incluye la URL.
+    """
+    if name is None and url is None:
+        raise ValueError("Indicar un nombre o una URL nuevos")
+    require_provider(engine, provider)
+    # La descarga ocurre fuera del lock: una fuente lenta no demora la ingesta.
+    feed = validate_source(url) if url is not None else None
+    with ownership(engine, f"provider:{provider}") as owner:
+        if owner is None:
+            raise Conflict("Proveedor ocupado: hay una ingesta en curso")
+        try:
+            with engine.begin() as conn:
+                found = rows(
+                    conn,
+                    "UPDATE providers SET name=COALESCE(:n,name),url=COALESCE(:u,url) "
+                    "WHERE id=:p AND active RETURNING id,name,status,next_run_at",
+                    n=name,
+                    u=url,
+                    p=provider,
+                )
+                if not found:
+                    raise Conflict("El proveedor está dado de baja")
+                if feed is not None:
+                    # Las sugerencias previas a la primera corrida usan la fuente vigente.
+                    execute(conn, "DELETE FROM provider_preview WHERE provider_id=:p", p=provider)
+                    _write_preview(conn, provider, feed)
+        except IntegrityError as exc:
+            if violated(exc) == "providers_name_key":
+                raise Conflict("Ya existe un proveedor con ese nombre") from None
+            raise
+    result = {**dict(found[0]), "source_validated": feed is not None}
+    if feed is not None:
+        result.update(_source_summary(feed))
+    return result
 
 
 def schedule_now(engine, provider):
@@ -228,7 +285,7 @@ def cut(engine, provider, link_id=None):
                 raise NotFound("Proveedor inexistente")
             for link in links:
                 execute(conn, "UPDATE links SET cut_requested=TRUE WHERE id=:l", l=link["id"])
-                link = dict(link, cut_requested=True)
+                link = dict(link, cut_requested=True, new_cut=not link["cut_requested"])
                 enqueue(conn, link, 0)
             checkpoint("cut_in_transaction")
         checkpoint("cut_committed")
@@ -331,6 +388,36 @@ def list_runs(engine, provider=None, limit=20, offset=0):
     }
 
 
+DEAD_LETTER_RESPONSE = 300
+
+
+def list_dead_letters(engine, store=None, pending_only=False, limit=50, offset=0):
+    """Fallas definitivas (RF-19, tablero de RF-25), la más reciente primero.
+
+    Incluye la publicación y el estado actual del vínculo para decidir si reanudarlo. La respuesta
+    del marketplace se recorta: es evidencia para el operador, no un volcado completo.
+    """
+    with engine.begin() as conn:
+        found = rows(
+            conn,
+            "SELECT d.id,d.link_id,l.store_id,l.item_id,l.sku,l.state AS link_state,d.revision,"
+            "d.quantity,d.http_status,left(d.response,:r) AS response,d.created_at,d.reviewed_at "
+            "FROM dead_letters d JOIN links l ON l.id=d.link_id "
+            "WHERE (CAST(:s AS text) IS NULL OR l.store_id=:s) "
+            "AND (NOT :pending OR d.reviewed_at IS NULL) "
+            "ORDER BY d.id DESC LIMIT :n OFFSET :o",
+            r=DEAD_LETTER_RESPONSE,
+            s=store,
+            pending=pending_only,
+            n=limit + 1,
+            o=offset,
+        )
+    return {
+        "items": [dict(r) for r in found[:limit]],
+        "next_offset": offset + limit if len(found) > limit else None,
+    }
+
+
 def runs_summary(engine, provider=None):
     """Cantidad de corridas por estado (y el total), de un proveedor o de todos."""
     filters = ", ".join(f"count(*) FILTER (WHERE status='{s}') AS {s}" for s in RUN_STATUSES)
@@ -376,7 +463,10 @@ def list_stores(engine):
 def status(engine, category="links", store=None, summary=False, limit=None):
     queries = {
         "links": LINKS,
-        "providers": "SELECT id,name,status,active,next_run_at,last_accepted_run,last_error FROM providers ORDER BY id",
+        "providers": "SELECT p.id,p.name,p.status,p.active,p.next_run_at,p.last_accepted_run,"
+        "p.last_error,(SELECT max(r.id) FROM runs r WHERE r.provider_id=p.id AND p.active "
+        "AND r.status='quarantined' AND r.id>COALESCE(p.last_accepted_run,0)) "
+        "AS quarantine_run_id FROM providers p ORDER BY p.id",
         "stores": "SELECT id,status,last_error,blocked_until,import_offset AS processed,import_total AS total,import_finished_at FROM stores ORDER BY id",
         "runs": "SELECT id,provider_id,status,snapshot_key,metrics,error,replay_of,started_at,finished_at FROM runs ORDER BY id",
         "quarantines": "SELECT * FROM runs WHERE status='quarantined' ORDER BY id",

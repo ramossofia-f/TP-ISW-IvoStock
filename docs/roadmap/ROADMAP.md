@@ -18,7 +18,7 @@ El alcance está en el [PRD](../prd/PRD.md); el diseño en el [SRD](../srd/SRD.m
 | 9b | Sesión de usuario, catálogo en segundo plano, proveedor con variantes y monitor | Implementado; pruebas de reanudación del catálogo, aprobación previa a la ingesta, baja de proveedor, fuente inaccesible y credencial revocada |
 | 10 | Cierres abruptos, caída de base y CI | 68 pruebas en Docker y ensayo real aprobados; workflow remoto por comprobar |
 | 11 | Coherencia documental y guía ejecutable | Verificadores y recorrido del README |
-| 12 | Video público de 5–12 minutos y commits de entrega | Commits locales organizados con coautorías del equipo; pendientes push, video y comprobación de CI remoto |
+| 12 | Video público de 5–12 minutos y commits de entrega | Entregado: video enlazado en el README. Desde el tramo MVP el CI remoto corre en cada pull request y en `develop` |
 
 El [registro E2](../entregas/ENTREGA-2.md) contiene los resultados concretos. La existencia de un workflow no acredita que haya ejecutado en el servidor remoto.
 
@@ -29,7 +29,9 @@ El [registro E2](../entregas/ENTREGA-2.md) contiene los resultados concretos. La
 | 28/10–03/11 | Cuentas precreadas, login e interfaz de configuración; incorporar segunda tienda desde la app reutilizando inventario | Grande | Francisco Ortega | María Saráchaga |
 | 04/11–10/11 | Tablero y búsqueda; completar modificación de proveedor y comprobaciones de autorización | Mediano | María Saráchaga | Sofía Ramos |
 | 11/11–17/11 | Definir componente ML, datos y evaluación; implementar entrenamiento, inferencia y monitoreo reproducibles | Grande | Sofía Ramos | Francisco Ortega |
-| 18/11–24/11 | Medir dos tiendas (RNF-02, RNF-15), consultas (RNF-09) y disponibilidad (RNF-07); completar automatización, evidencia y defensa | Mediano | Los tres: Sofía Ramos dos tiendas, María Saráchaga consultas y Francisco Ortega disponibilidad | — |
+| 18/11–24/11 | Medir dos tiendas (RNF-02, RNF-15), consultas (RNF-09) y disponibilidad (RNF-07); completar automatización, evidencia y defensa | Mediano | Los tres: Sofía Ramos dos tiendas y consultas, María Saráchaga registro y video de la Entrega 3, Francisco Ortega disponibilidad | — |
+
+El 18/11 Sofía Ramos y María Saráchaga intercambiaron tareas del último tramo, de común acuerdo: Sofía toma la medición de consultas (RNF-09) y María, el registro y el video de la Entrega 3, para repartir mejor el código entre los tres.
 
 El referente coordina el tramo, abre su pull request y responde por su criterio de salida; el apoyo revisa ese pull request. El trabajo se comparte: cuando varios integrantes resuelven algo juntos, el commit lleva a quien lo escribió como autor y a los demás como coautores. El tamaño es relativo al tramo de una semana de tres integrantes. Si un tramo se atrasa más de dos días se aplica el orden de recorte del supuesto S-08 del [PRD](../prd/PRD.md) antes de empezar el siguiente.
 
@@ -41,11 +43,84 @@ El referente coordina el tramo, abre su pull request y responde por su criterio 
 | API de configuración | Implementada sobre `services` ([ADR-0011](../adr/0011-api-de-configuracion.md)); pruebas de integración por endpoint |
 | Segunda tienda reutilizando inventario | Implementada: tiendas aprovisionadas aparte, rotación de la importación ([ADR-0012](../adr/0012-tiendas-aprovisionadas-y-rotacion.md)); prueba de integración de una ingesta que actualiza T1 y T2 |
 | Interfaz de configuración (RF-25) | Implementada y estática ([ADR-0013](../adr/0013-interfaz-estatica.md)), con tablero de corridas; sin verificar en navegador |
-| Recorrido manual en Docker con el feed real, imágenes y CI remoto | Pendiente; ver el [registro del tramo](../entregas/REGISTRO-TRAMO-1.md) |
+| Recorrido manual en Docker con el feed real, imágenes y CI remoto | Hecho: los ensayos con el inventario de Celesa corrieron en Docker ([dos tiendas](../entregas/ENSAYO-DOS-TIENDAS-CELESA.md), [consultas](../entregas/ENSAYO-CONSULTAS-CELESA.md)), y el CI remoto pasa en cada pull request. Antecedentes en el [registro del tramo](../entregas/REGISTRO-TRAMO-1.md) |
 
-Del tramo siguiente ya están el tablero de corridas y la búsqueda de sugerencias por SKU; sigue pendiente modificar un proveedor (RF-04).
+Del tramo siguiente están el tablero de corridas, la búsqueda de sugerencias por SKU y, desde el 19/11, la modificación de proveedor (RF-04): `PATCH /providers/{id}`, `provider-edit` y el formulario de la interfaz.
 
-Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas. El componente de ML requiere una decisión específica antes de implementarlo.
+### Plan del tramo 11/11–17/11 (ML)
+
+El [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md) implementa un modelo global de normalidad que aprende
+de aceptados y reentrena mediante outbox. Se aceptó el 22/11/2026 y reemplaza el modelo binario
+del [ADR-0015](../adr/0015-detector-de-feeds-anomalos.md).
+Se mantienen la guarda obligatoria y su rol monótono: cuarentena si guarda o ML, sin omisiones.
+Se conserva el reparto de contribuciones; las cifras del modelo anterior son evidencia histórica.
+
+| Parte | Resultado verificable | Autor | Revisa |
+|---|---|---|---|
+| Experimento anterior: datos y entrenamiento | Generador, variables, conjunto reproducible, modelo binario y evaluación conservados como histórico | Sofía Ramos | Francisco Ortega |
+| Implementación vigente: normalidad e integración | Modelo global OneClassSVM adicional a la guarda, servicio privado, aprendizaje durable, versiones reproducibles, diagnóstico interno y aviso de cuarentena; ADR-0016 aceptado | Francisco Ortega | Sofía Ramos |
+
+Implementación verificada localmente en el [registro del detector](../entregas/ML-NORMALIDAD-VERIFICACION.md):
+300 pruebas Python aprobadas en Docker tras restablecer la guarda obligatoria y aviso comprobado
+con Node.js en el host. La
+[evaluación sintética vigente](../entregas/ML-NORMALIDAD-EVALUACION.md) declara detecciones y falsas
+cuarentenas. Integrado en `develop` por los PR #18 y #27, con revisión del equipo y CI remoto.
+
+Suite al cierre de la Entrega 3 (23/11/2026, sobre `develop`): 376 pruebas automatizadas, 193
+unitarias (192 aprobadas y 1 omitida con `pytest -m "not integration"`) y 183 de integración
+contra PostgreSQL y S3, que corren en el job `integration` del CI.
+
+La [activación tras diez aceptados del proveedor](../entregas/ENTREGA-3-ML-PENDIENTES.md) se grabó
+para el video E3 sobre el commit `219b928`: `ml-report` con 9 de 10 observaciones, corrida 10
+aceptada por la guarda, nueva versión del modelo con 10 observaciones y corrida 11 decidida con
+`decision_source: ml`.
+
+Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas.
+
+### Instrumentación de disponibilidad y publicación
+
+Se implementó un servicio de métricas que reutiliza el estado operativo, persiste muestras por
+minuto durante siete días y ofrece el mismo contrato autenticado a la API y al tablero. El
+observador es otro microservicio de sólo lectura, sin histórico propio ni alertas. Los percentiles
+de efecto externo se calculan por tienda, separados de disponibilidad. Diseño y comparación con
+UptimeRobot en el [ADR-0017](../adr/0017-metricas-y-observador.md).
+
+La campaña real de 24 horas se ejecutó en el laboratorio del 19/11 al 20/11/2026 sobre la revisión
+`7600ae5`: 1.440 de 1.440 muestras y 100 % para API y motor, por encima del 99 %
+([resultado](../entregas/RNF07-RESULTADO-COMPLETO-20261119.md), PR #31). El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
+detalla las comprobaciones ejecutadas y las limitaciones.
+
+### Ensayo de dos tiendas (RNF-02 y RNF-15)
+
+`scripts/ensayo_dos_tiendas.py` mide dos tiendas sanas y sin cola previa con 1.000 vínculos cada
+una, con los workers reales y la cuota real. Ambas cumplen RNF-02 en la corrida de carga máxima
+(1.000 cambios por tienda), sin pendientes ni duraciones desconocidas: con el inventario real de
+Celesa (255.129 SKU) el p95 fue de 15,1 y 16,0 minutos y el p99 de 16,1 y 16,2; con el feed
+sintético, p95 de 16,0 y p99 de 17,0. Resultados, cambios por corrida y recursos en los reportes
+[con Celesa](../entregas/ENSAYO-DOS-TIENDAS-CELESA.md) y
+[con el feed sintético](../entregas/ENSAYO-DOS-TIENDAS-SINTETICO.md). Un primer ensayo con Celesa
+se descartó porque el equipo se suspendió 16 minutos durante la publicación; desde entonces el
+script detecta suspensiones y no escribe el reporte si ocurren.
+
+### Ensayo de consultas (RNF-09)
+
+`scripts/ensayo_consultas.py` sigue el protocolo del SRD: cinco operadores autenticados, una
+consulta por segundo cada uno durante 30 minutos, 9.000 consultas con 50 % listados de cien
+vínculos, 25 % búsquedas de SKU y 25 % corridas y fallas, con carga abierta y latencia medida en el
+cliente desde el instante programado. Con el inventario real de Celesa, sobre 2.000 vínculos y con
+el motor publicando (dos ingestas y 2.835 publicaciones durante la medición), cumple RNF-09: p95 de
+18 ms, p99 de 20 ms y ninguna consulta con error. Detalle por tipo de consulta y recursos en el
+[reporte del ensayo](../entregas/ENSAYO-CONSULTAS-CELESA.md).
+
+### Readiness cloud (ADR-0018)
+
+El mismo Compose se despliega en una cuenta temporal de AWS (Innovation Sandbox de UdeSA), con
+snapshots en S3 real mediante el rol de la instancia y sin MinIO. Los scripts de `scripts/aws/`
+crean, despliegan y destruyen el entorno, y el job `despliegue` del CI valida scripts y
+configuración. El 22/11 se desplegó en `us-east-2`: 11 servicios sanos, una corrida aceptada y el
+snapshot en el bucket. Después se destruyó todo y se comprobó que la cuenta quedó vacía. El
+despliegue encontró un defecto de la imagen, el bytecode sin precompilar, que hacía fallar los
+healthchecks en 2 vCPU. Evidencia y costos en la [guía de despliegue](../despliegue/AWS.md).
 
 ## Preparación de la presentación E2
 

@@ -16,11 +16,12 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from ivostock import api_auth, api_config
+from ivostock import api_auth, api_config, api_metrics
 from ivostock.api_auth import require_operator
+from ivostock.api_errors import invalid_request
 from ivostock.db import database, execute
 from ivostock.logs import configurar
 
@@ -41,13 +42,10 @@ app = FastAPI(
 )
 app.include_router(api_auth.router)
 app.include_router(api_config.router)
+app.include_router(api_metrics.router)
 
 
-@app.exception_handler(RequestValidationError)
-async def invalid_request(request, exc):
-    # Sin `input`: el valor recibido puede ser una contraseña o una URL con credenciales.
-    errors = [{"type": e["type"], "loc": e["loc"], "msg": e["msg"]} for e in exc.errors()]
-    return JSONResponse({"detail": errors}, status_code=422)
+app.add_exception_handler(RequestValidationError, invalid_request)
 
 
 @app.get("/openapi.json", include_in_schema=False, dependencies=[Depends(require_operator)])

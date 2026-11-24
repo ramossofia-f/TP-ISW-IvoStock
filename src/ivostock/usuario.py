@@ -9,12 +9,14 @@ import json
 import shlex
 
 from ivostock import auth, cli
+from ivostock.api_models import RunOut
 from ivostock.db import database
 from ivostock.logs import configurar
 
 USER_COMMANDS = {
     "store-add",
     "provider-add",
+    "provider-edit",
     "provider-disable",
     "suggest",
     "approve",
@@ -80,7 +82,11 @@ class Session:
             args = cli.parser().parse_args(tokens)
         except SystemExit:
             return {"error": "Argumentos inválidos; ver help"}
-        return cli.execute(args)[1]
+        ok, result = cli.execute(args)
+        if ok and args.command == "status" and args.category in ("runs", "quarantines"):
+            # La sesión del operador ve el mismo contrato público que la interfaz HTTP.
+            return [RunOut.model_validate(r).model_dump(mode="json") for r in result]
+        return result
 
 
 def main():

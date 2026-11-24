@@ -28,6 +28,10 @@ def parser():
     p = commands.add_parser("provider-add")
     p.add_argument("name")
     p.add_argument("url")
+    p = commands.add_parser("provider-edit", help="Cambiar nombre o URL; una URL nueva se valida")
+    p.add_argument("provider", type=int)
+    p.add_argument("--name")
+    p.add_argument("--url")
     p = commands.add_parser("provider-disable")
     p.add_argument("provider", type=int)
     p = commands.add_parser(
@@ -75,6 +79,10 @@ def parser():
     p.add_argument("--interval", type=float, default=15)
     commands.add_parser("compare", help="Procesar los eventos disponibles")
     commands.add_parser("publish", help="Publicar una tarea disponible")
+    commands.add_parser("ml-report", help="Diagnóstico interno del modelo y aprendizaje pendiente")
+    p = commands.add_parser("ml-reproduce", help="Reproducir una versión sin activarla")
+    p.add_argument("version")
+    p.add_argument("--output", type=Path, default=Path("data/ml/reproduced.json"))
     p = commands.add_parser("fault", help="Provocar una falla en el simulador")
     p.add_argument("store")
     p.add_argument("status", type=int)
@@ -165,8 +173,22 @@ def run(args):
         )
     engine = database()
     match args.command:
+        case "ml-report":
+            from ivostock.ml.repository import report
+
+            return report(engine)
+        case "ml-reproduce":
+            from ivostock.ml.training import reproduce
+
+            payload = reproduce(engine, args.version)
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(payload, ensure_ascii=False, allow_nan=False),
+                                   encoding="utf-8")
+            return {"version": payload["version"], "output": str(args.output), "activated": False}
         case "provider-add":
             return services.add_provider(engine, args.name, args.url)
+        case "provider-edit":
+            return services.update_provider(engine, args.provider, args.name, args.url)
         case "provider-disable":
             return services.cut(engine, args.provider)
         case "store-add":

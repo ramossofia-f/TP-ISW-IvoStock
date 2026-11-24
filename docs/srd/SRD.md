@@ -12,6 +12,10 @@ flowchart LR
     HTTP[Proveedor HTTP] --> I[Ingesta]
     I --> S3[(MinIO / S3)]
     I --> PG
+    I -->|estadísticas, máximo 1 s| ML[Inferencia ML]
+    ML --> PG
+    PG --> T[Entrenador ML]
+    T --> PG
     PG --> C[Comparación]
     C --> PG
     PG --> P[Publicación]
@@ -20,9 +24,13 @@ flowchart LR
     P -->|HTTP y cuota| SIM
     SIM --> DB[(Tablas del simulador)]
     API[API] --> PG
+    MET[Métricas internas / muestra por minuto] --> PG
+    MET -->|health HTTP| API
+    OBS[Observador de sólo lectura] -->|GET autenticado| MET
+    OBS -->|health HTTP| API
 ```
 
-Python 3.12, FastAPI, SQLAlchemy, Alembic, psycopg, httpx y boto3. Las dependencias se bloquean en `uv.lock`. API y workers comparten PostgreSQL; no se llaman entre sí. Sus caídas son independientes mientras PostgreSQL esté disponible. El simulador persiste en tablas propias y el motor sólo lo consulta por HTTP.
+Python 3.12, FastAPI, SQLAlchemy, Alembic, psycopg, httpx y boto3. Las dependencias se bloquean en `uv.lock`. La API de operadores y los workers comparten PostgreSQL; sus caídas son independientes mientras PostgreSQL esté disponible. Ingesta, comparación y publicación se integran mediante eventos; la ingesta sí consulta el servicio ML por HTTP con plazo y respaldo. El simulador persiste en tablas propias y el motor sólo lo consulta por HTTP.
 
 La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostock.services`. La sesión imita las acciones del frontend: exige el login con una cuenta de operador (`ivostock.auth`, la misma que usa la API) y sólo expone comandos de usuario; los comandos de ensayo y operación (`fault`, `schedule-now`, `monitor`, `compare`, `publish`) quedan en la CLI de backend. La ingesta reside en `ivostock.ingesta.servicio`, el parser y la guarda en `ivostock.ingesta`, la comparación en `ivostock.comparison`, el publicador en `ivostock.publisher` y el catálogo HTTP en `ivostock.marketplace`. La API expone `GET /health` y la autenticación (`POST /auth/login`, `POST /auth/logout`, `GET /auth/me`); todo otro endpoint declara la dependencia `require_operator` (RNF-11). La configuración (`/providers`, `/stores`, `/links`) delega en `ivostock.services` y traduce los errores tipados de `ivostock.errors` a 404, 409, 422 y 502 sin exponer detalles internos ([ADR-0011](../adr/0011-api-de-configuracion.md)); la interfaz estática de configuración se sirve en `/` y `/static/*`, rutas públicas y fuera de OpenAPI que no entregan datos operativos ([ADR-0013](../adr/0013-interfaz-estatica.md)).
 
@@ -33,16 +41,281 @@ La sesión `ivostock.usuario` y la CLI acceden a los servicios mediante `ivostoc
 | providers, provider_preview | Configuración, próxima ingesta y SKU de la validación del alta |
 | stores, catalog | Estado, punto de control de importación (`import_offset`, `import_total`, `import_finished_at`) y catálogo importado |
 | users, sessions | Operadores precreados (hash PBKDF2) y sesiones con el SHA-256 del token y su vencimiento ([ADR-0010](../adr/0010-cuentas-y-sesiones.md)) |
-| runs, stock | Snapshot, resultado y último inventario completo aceptado |
+| runs, stock | Snapshot, resultado, decisión privada de validación y último inventario completo aceptado |
+| ml_observations | Outbox única por corrida aceptada; estadísticas, aceptación original, reintento y versión entrenada |
+| ml_models, ml_state | Versiones JSON inmutables y puntero transaccional al único modelo global vigente |
 | links | Asignación, confirmado inicial, deseado, confirmado, revisión, corte y estado |
 | comparison_events | Aviso durable creado en el commit de aceptación |
 | tasks | Una pendiente por vínculo; antigüedad, valor, revisión, backoff y lease |
 | attempts, dead_letters | Evidencia de cada envío y fallas que requieren revisión |
 | market_calls | Ventana móvil de permisos por tienda |
 | worker_heartbeats | Actividad reciente de cada proceso |
+| metric_samples | Estado operativo por minuto UTC; retención de siete días |
+| publication_measurements | Origen, confirmación y efecto externo por vínculo/revisión; pendientes y reemplazos identificados |
+| sim_publication_effects | Primer efecto por tienda/publicación/`X-Ivo-Work`, conservado al repetir un envío |
 | sim_* | Catálogo, cantidades, cuota y fallas del simulador |
 
 Alembic instala el esquema. Un índice único parcial sobre publicación/tienda impide más de un vínculo no desactivado. Las cantidades son enteros entre 0 y 2.147.483.647. Los SKU son cadenas. Los snapshots usan claves SHA-256 y escritura condicional: los bytes de una clave existente no se reemplazan. Tareas e intentos conservan la referencia de corrida; un corte o una reanudación manual puede tener referencia nula y se identifica por vínculo y revisión.
+
+### Modelo de datos
+
+Los diagramas reflejan el esquema que instalan las migraciones `0001` a `0009`; la `0009` sólo agrega índices sobre `publication_measurements`. Las líneas continuas son claves foráneas; las punteadas, relaciones que el código mantiene sin una clave foránea en la base. Todas las fechas son `timestamptz`. `PK` es clave primaria, `FK` foránea y `UK` única.
+
+Motor de sincronización:
+
+```mermaid
+erDiagram
+    providers ||--o{ runs : "ejecuta"
+    runs |o--o{ runs : "replay_of"
+    providers |o..o| runs : "last_accepted_run"
+    providers ||--o{ stock : "inventario vigente"
+    providers ||--o{ provider_preview : "validación del alta"
+    providers ||--o{ comparison_events : "aviso"
+    runs |o--o{ comparison_events : "origina"
+    stores ||--o{ catalog : "publicaciones importadas"
+    providers ||--o{ links : "abastece"
+    catalog ||--o{ links : "a lo sumo uno no inactivo"
+    links ||--o| tasks : "una pendiente"
+    runs |o--o{ tasks : "origina"
+    links ||--o{ attempts : "envíos"
+    runs |o--o{ attempts : "origina"
+    links ||--o{ dead_letters : "fallas definitivas"
+    attempts |o--o{ dead_letters : "evidencia"
+    links ||--o{ publication_measurements : "una por revisión"
+    stores ||--o{ publication_measurements : "agrupa"
+    stores ||..o{ market_calls : "cuota"
+
+    providers {
+        bigint id PK
+        text name UK
+        text url "nunca se devuelve"
+        text status
+        boolean active
+        timestamptz next_run_at
+        text last_error
+        bigint last_accepted_run
+    }
+    provider_preview {
+        bigint provider_id PK,FK
+        text sku PK
+        integer quantity "mayor o igual a 0"
+    }
+    runs {
+        bigint id PK
+        bigint provider_id FK
+        text status "running accepted quarantined failed interrupted"
+        text snapshot_key "SHA-256 en S3"
+        jsonb metrics "D Z p decisión de ML"
+        text error
+        bigint replay_of FK
+        timestamptz started_at
+        timestamptz finished_at
+    }
+    stock {
+        bigint provider_id PK,FK
+        text sku PK
+        integer quantity "mayor o igual a 0"
+    }
+    comparison_events {
+        bigint id PK
+        bigint provider_id FK
+        bigint run_id FK
+        timestamptz created_at
+        timestamptz processed_at
+    }
+    stores {
+        text id PK
+        text status
+        timestamptz blocked_until
+        text last_error
+        integer import_offset
+        integer import_total
+        timestamptz import_finished_at
+        timestamptz import_served_at
+    }
+    catalog {
+        text store_id PK,FK
+        text item_id PK
+        text sku
+        integer quantity "mayor o igual a 0"
+    }
+    links {
+        bigint id PK
+        bigint provider_id FK
+        text store_id FK
+        text item_id FK
+        text sku
+        text state "active error inactive"
+        boolean cut_requested
+        integer initial_confirmed
+        integer desired
+        integer confirmed
+        bigint revision
+        timestamptz last_success_at
+        text last_error
+        timestamptz created_at
+    }
+    tasks {
+        bigint link_id PK,FK
+        bigint revision
+        integer quantity
+        integer attempts
+        integer replacements
+        bigint run_id FK
+        timestamptz enqueued_at
+        timestamptz available_at
+        timestamptz claimed_until
+        bigint claimed_revision
+    }
+    attempts {
+        bigint id PK
+        bigint link_id FK
+        bigint revision
+        integer quantity
+        text status
+        integer http_status
+        text response
+        bigint run_id FK
+        timestamptz created_at
+        timestamptz finished_at
+    }
+    dead_letters {
+        bigint id PK
+        bigint link_id FK
+        bigint attempt_id FK
+        bigint revision
+        integer quantity
+        integer http_status
+        text response
+        timestamptz created_at
+        timestamptz reviewed_at
+    }
+    publication_measurements {
+        bigint link_id PK,FK
+        bigint revision PK
+        text store_id FK
+        timestamptz origin_at
+        timestamptz recorded_at
+        timestamptz effect_at
+        timestamptz confirmed_at
+        timestamptz superseded_at
+    }
+    market_calls {
+        text store_id
+        timestamptz at
+    }
+```
+
+Cuentas, aprendizaje y operación:
+
+```mermaid
+erDiagram
+    users ||--o{ sessions : "inicia"
+    users |o..o{ login_failures : "por nombre, exista o no"
+    ml_models ||--o| ml_state : "versión vigente"
+    ml_models |o--o{ ml_observations : "entrenada con"
+    runs ||--o| ml_observations : "una por aceptación"
+    providers ||--o{ ml_observations : "codificado en one-hot"
+
+    users {
+        bigint id PK
+        text username UK "a-z 0-9 . _ -"
+        text password_hash "PBKDF2"
+        boolean active
+        timestamptz created_at
+        timestamptz last_login_at
+    }
+    sessions {
+        text token_hash PK "SHA-256 del token"
+        bigint user_id FK "ON DELETE CASCADE"
+        timestamptz created_at
+        timestamptz expires_at
+    }
+    login_failures {
+        bigint id PK
+        text username
+        timestamptz at
+    }
+    ml_models {
+        text version PK
+        jsonb payload "modelo exportado sin pickle"
+        timestamptz created_at
+    }
+    ml_state {
+        integer id PK "siempre 1"
+        text active_version FK
+    }
+    ml_observations {
+        bigint run_id PK,FK
+        bigint provider_id FK
+        timestamptz accepted_at
+        jsonb features
+        text trained_version FK
+        timestamptz trained_at
+        integer attempts
+        timestamptz retry_at
+        text last_error
+    }
+    metric_samples {
+        timestamptz minute PK
+        jsonb payload "estado del minuto"
+    }
+    worker_heartbeats {
+        text name PK
+        timestamptz at
+    }
+```
+
+Simulador del marketplace, con tablas propias: el motor nunca las lee y sólo lo consulta por HTTP.
+
+```mermaid
+erDiagram
+    sim_stores ||--o{ sim_items : "publicaciones"
+    sim_items ||--o{ sim_publication_effects : "primer efecto por envío"
+    sim_items |o..o{ sim_faults : "fallas provocadas"
+    sim_stores ||..o{ sim_calls : "cuota"
+
+    sim_stores {
+        text id PK
+    }
+    sim_items {
+        text store_id PK,FK
+        text id PK
+        text sku
+        integer available_quantity "mayor o igual a 0"
+        bigint writes
+        timestamptz updated_at
+    }
+    sim_publication_effects {
+        text store_id PK,FK
+        text item_id PK,FK
+        text work_id PK "vínculo:revisión"
+        integer quantity
+        timestamptz effect_at
+    }
+    sim_faults {
+        text store_id PK
+        text item_id PK
+        integer status
+        integer remaining
+    }
+    sim_calls {
+        text store_id
+        timestamptz at
+    }
+```
+
+Reglas que impone la base y no sólo el código:
+
+| Regla | Mecanismo |
+|---|---|
+| Una publicación tiene a lo sumo un vínculo no inactivo | Índice único parcial `single_writer` sobre `links(store_id, item_id)` con `state <> 'inactive'` |
+| Una tarea pendiente por vínculo | `tasks.link_id` es clave primaria; una revisión nueva reemplaza a la anterior |
+| Una medición por revisión y una observación de ML por corrida | Claves primarias `(link_id, revision)` y `run_id` |
+| Cantidades no negativas | `CHECK (quantity >= 0)` en `catalog`, `stock`, `provider_preview`, `tasks` y `sim_items`; también `desired`, `confirmed` e `initial_confirmed` en `links` |
+| Estados de un vínculo | `CHECK (state IN ('active', 'error', 'inactive'))` |
+| Nombres únicos | `UNIQUE` en `providers.name` y `users.username`; el formato del usuario además se valida con `CHECK` |
+| Un único modelo vigente | `ml_state` admite una sola fila (`CHECK (id = 1)`) |
 
 La ingesta adquiere un advisory lock de sesión por proveedor, descarga, almacena el snapshot y registra su referencia. Después normaliza y evalúa el inventario. El reemplazo de stock, resultado aceptado y evento de comparación comparten una transacción. Se usa una tabla temporal con COPY y ANALYZE; sólo se actualizan cantidades distintas y los ausentes se eliminan mediante anti-join indexado. Un snapshot almacenado sin aceptación no cambia stock ni genera tareas. La siguiente corrida identifica registros abandonados como interrumpidos.
 
@@ -55,6 +328,67 @@ La validación del alta descarga la fuente, aplica RF-11 y guarda sus SKU en `pr
 La importación de catálogo corre en el worker `catalog`, una página de hasta cien publicaciones por ciclo. Las publicaciones de la página y el nuevo `import_offset` se confirman en la misma transacción; si el proceso cae antes, la página se vuelve a pedir y `ON CONFLICT DO NOTHING` evita duplicados. Un 429 respeta `Retry-After`; 5xx o una caída de PostgreSQL se reintentan; 401 o 403 degradan la tienda y la reintentan a los treinta segundos. `store-add --wait` ejecuta la misma importación en el proceso de la CLI. Con varias tiendas pendientes se atienden por rotación (primero la menos recientemente atendida, `stores.import_served_at`) y una tienda sin cupo libre en su ventana cede el turno a las demás, de modo que una importación larga no demora a una tienda nueva ([ADR-0012](../adr/0012-tiendas-aprovisionadas-y-rotacion.md)). Un 404 durante la importación degrada la tienda con el mensaje «La tienda no existe en el marketplace». El lock evita solapamientos. Una corrida automática interrumpida se recupera mediante el tratamiento de corridas abandonadas antes de esperar el siguiente vencimiento.
 
 El comparador toma el mismo lock por proveedor. Lee su inventario vigente y los vínculos, actualiza deseados y encola diferencias, marcando eventos procesados en la misma transacción. Los vínculos en falla actualizan su deseado pero no vuelven a encolarse solos. Los cortes conservan deseado cero aunque una ingesta posterior tenga cantidad positiva.
+
+## Validación y aprendizaje de normalidad
+
+El [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md) define el diseño de
+normalidad implementado y conserva la guarda obligatoria del ADR-0015. Después de parsear y calcular D/Z/p, la ingesta pone en cuarentena si
+p>0,5, sin consultar ML. Sólo si pasa la guarda, llama al servicio privado
+`ivostock.ml.api` con el ID estable del proveedor y siete estadísticas: `rows`, `sku`, número de
+`discarded`, `parse_error_rate`, `D`, `Z`, `p`. No envía archivos, claves de snapshot ni URLs.
+El plazo de la petición completa es un segundo, sin reintentos. El servicio usa la versión
+publicada antes de esta aceptación. Si falta historial, hay timeout o falla el servicio/modelo,
+la guarda decide sola y se conserva el motivo del respaldo. Con ML listo, la cuarentena es
+guarda o ML: el modelo sólo puede sumar cuarentenas, nunca liberar lo que frena la guarda.
+
+El modelo es OneClassSVM RBF con nu=0,05 y gamma=scale. Los conteos se transforman con log1p,
+las variables numéricas se estandarizan con media y varianza ponderadas y el proveedor se agrega
+como one-hot sin escalar. La distancia firmada menor que -1e-8 indica anomalía; no es una
+probabilidad. El JSON exporta soporte, coeficientes, intercepto, gamma, transformación y categorías.
+`NormalityModel` ejecuta la función en Python puro, comprueba esquema/hash y rechaza parámetros
+inválidos. Un proveedor sólo se evalúa con una versión que incluya al menos diez aceptados suyos.
+
+Aceptar conserva en una transacción inventario, corrida, evento y `ml_observations`; poner en
+cuarentena no conserva observación ni genera evento. `runs.metrics.ml` guarda decisión, origen,
+versión, puntaje, `guard_accepted` y motivo del respaldo. Si rechaza la guarda, el origen es
+`rules`, `guard_accepted=false` y versión, puntaje y motivo del respaldo son nulos: no hubo
+consulta ML ni se presume una caída. `RunOut` excluye ese objeto de los recorridos de negocio.
+El diagnóstico técnico se consulta por backend y por Monitoreo, con la excepción de permisos
+del TP documentada más abajo.
+La aceptación confirmada es el único origen de observaciones nuevas. No hay backfill automático.
+
+El worker `ml-train` usa un advisory lock global. Toma el pendiente más antiguo y reentrena con
+la ventana de hasta 200 observaciones ya procesadas por proveedor más la actual. El tiempo de
+referencia es la aceptación más reciente de esa ventana: peso 2^(-edad/7 días), normalizado.
+Mientras tanto, comparación y publicación siguen. Sólo el entrenador importa sklearn/numpy.
+Publicar el JSON, cambiar `ml_state.active_version` y confirmar la observación ocurren juntos.
+Las versiones no se actualizan ni eliminan mediante UPDATE/DELETE. Un cierre antes del commit
+conserva la versión previa y el pendiente; después del commit no se vuelve a entrenar esa corrida.
+Un error registra su tipo, conserva la versión vigente y reintenta a los treinta segundos.
+
+Cada versión conserva IDs y hash de los ejemplos, configuración, fecha de referencia y versiones
+de las bibliotecas. `ml-reproduce` reconstruye esa versión desde las observaciones retenidas,
+comprueba su hash y escribe un archivo fuera de Git sin activarlo. Una corrida estable nueva es
+otra observación; recuperar la misma observación no la duplica. Replay vuelve a evaluar con la
+versión activa y mantiene la referencia a la corrida original.
+
+| Contrato interno de ML (puerto 8002) | Comportamiento |
+|---|---|
+| `POST /classify` | Bearer `ML_TOKEN`; `provider_id` y las siete métricas; devuelve `accepted`, `score`, `version`. 503 `insufficient_history` o `invalid_model` habilita respaldo |
+| `GET /health/live` | Proceso y acceso al esquema; Compose usa esta sonda durante el arranque |
+| `GET /health` | Comprueba modelo e inferencia; 503 durante calentamiento o si no puede servir |
+| `GET /health/training` | Heartbeat del entrenador menor a treinta segundos; no confundir con disponibilidad de inferencia |
+
+Las sondas públicas sólo entregan estado genérico. Swagger/ReDoc/OpenAPI están desactivados en el
+servicio ML. El estado interno y el observador distinguen proceso, inferencia y entrenamiento: que el motor
+funcione por respaldo no acredita uptime de ML. `ml-report` muestra versión, decisiones y motivos
+de respaldo, distribución de los últimos mil puntajes, pendientes, última actualización y errores
+del entrenador. No se atribuye precisión en línea sin etiquetas independientes.
+
+La API de operadores añade `quarantine_run_id` al proveedor activo si existe una cuarentena
+posterior a su última aceptación. La app actualiza un aviso global cada cinco segundos durante
+la sesión, usando sólo proveedor/corrida. Se retira después de una aceptación posterior o baja.
+El puntaje fijo p representa la guarda obligatoria; no representa la decisión de ML.
 
 ## Cola y concurrencia
 
@@ -87,19 +421,21 @@ La API de la aplicación (`ivostock.main`, puerto 8000) expone la configuración
 | Endpoint de la aplicación | Contrato |
 |---|---|
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Sesión de operador; el token se guarda como SHA-256 y vence a los `SESSION_TTL_MINUTES` |
-| `POST /providers`, `GET /providers`, `POST /providers/{id}/disable` | Alta con validación de la fuente (SKU, tasa de errores, muestra, próxima ingesta); listado sin URL; baja que lleva a cero los vínculos |
+| `POST /providers`, `GET /providers`, `PATCH /providers/{id}`, `POST /providers/{id}/disable` | Alta con validación de la fuente (SKU, tasa de errores, muestra, próxima ingesta); listado sin URL; modificación de nombre o URL (RF-04) que valida una URL nueva igual que el alta, toma el lock de ingesta del proveedor y conserva inventario aceptado y vínculos, sin devolver la URL; baja que lleva a cero los vínculos |
 | `GET /providers/{id}/suggestions`, `POST /providers/{id}/approve` | Sugerencias por SKU con el último inventario aceptado, sin descargar; aprobación de todas, una selección o las primeras N; una publicación con vínculo activo se rechaza (RF-07) |
 | `GET /stores`, `GET /stores/available`, `POST /stores` | Tiendas con progreso de importación; las preconfiguradas en `MARKETPLACE_STORES`; incorporar una tienda que ya existe en el marketplace |
 | `GET /links`, `GET /links/summary`, `POST /links/{id}/off`, `POST /links/{id}/resume` | Vínculos paginados y contadores; apagado con cero confirmado antes de desactivar; reanudación de un vínculo fallido |
 | `GET /runs`, `GET /runs/summary` | Corridas de ingesta, de sólo lectura, y su conteo por estado |
+| `GET /deadletters` | Fallas definitivas, de sólo lectura, con el estado actual del vínculo y la respuesta del marketplace recortada a 300 caracteres |
 | `GET /health` | Disponibilidad de proceso y esquema, sin datos de negocio |
+| `GET /metrics/current`, `GET /metrics/history`, `GET /metrics/summary` | Último estado con antigüedad y heartbeats actuales; serie del período; disponibilidad y percentiles por tienda. Sólo lectura y autenticados; router compartido con el servicio de métricas |
 
 El contrato del proveedor es RF-11. La preparación agrega exactamente los bytes `SKU;stock\n` al original, conserva procedencia y hashes y sirve únicamente el directorio de derivados. Las credenciales se configuran por entorno; las URLs no deben incluir secretos.
 
 | Endpoint del simulador | Contrato |
 |---|---|
 | `GET /stores/{store}/items` | Bearer preconfigurado; `limit` entero de 1 a 100 (por defecto 100) y `offset` entero desde 0 (por defecto 0). Ordena por ID de publicación; devuelve `items`, `next_offset` (`null` al terminar) y `total` |
-| `PUT /stores/{store}/items/{item}/stock` | Bearer; JSON `available_quantity` entero no negativo; cantidad absoluta |
+| `PUT /stores/{store}/items/{item}/stock` | Bearer; JSON `available_quantity` entero no negativo; cantidad absoluta. `X-Ivo-Work` opcional identifica vínculo:revisión para devolver su primer `effect_at` aunque se repita el envío |
 | `POST /admin/seed` | Credencial de control; crea catálogo una vez por tienda. Lo usan `scripts/provisionar_tiendas.py` (muestras del 50 % de los SKU distintos del inventario, con un núcleo común a todas las tiendas, y stock cero) y `seed`; la aplicación no |
 | `POST /admin/fault` | Credencial de control; estado HTTP e intentos afectados, por tienda o publicación |
 | `GET /admin/stores/{store}` | Observación externa de ensayos, sin consumir cuota de negocio |
@@ -114,6 +450,25 @@ La CLI devuelve JSON y códigos de salida no nulos para errores. `monitor` reún
 
 El generador `ivostock.generador.feeds` produce escenarios sintéticos con semilla y manifiesto de parámetros/hashes; no modifica el inventario usado como base. Los logs de ingesta se formatean mediante `ivostock.logs`: mantienen contexto operativo y omiten el mensaje y traceback de excepciones externas. La CLI conserva su resultado JSON en stdout y envía estos diagnósticos a stderr.
 
+## Despliegue y readiness cloud
+
+El mecanismo principal de ejecución es Docker Compose en local (ADR-0008). La readiness cloud se demuestra con un despliegue efímero en AWS ([ADR-0018](../adr/0018-despliegue-cloud-efimero.md)): una instancia EC2 corre el mismo `docker-compose.yml`, combinado con `docker-compose.aws.yml`, y los snapshots van a un bucket S3 real en lugar de MinIO. Sin `S3_ENDPOINT` ni claves, `boto3` usa las credenciales del rol de la instancia, así que ninguna clave de AWS queda en `.env`, en Git ni en la imagen; `S3_REGION` fija la región y la creación del bucket la declara fuera de `us-east-1`. Los puertos siguen en `127.0.0.1` y el acceso es por túnel SSH. `scripts/aws/` crea, despliega con verificación de punta a punta y destruye el entorno; el job `despliegue` de la CI valida esos scripts y la configuración combinada sin credenciales. La guía está en [docs/despliegue/AWS.md](../despliegue/AWS.md).
+
+## Cuellos de botella y escalabilidad
+
+El diseño identifica dónde se limita el caudal y cómo crecería. No se implementa esa escala: el MVP se mide con dos tiendas y 2.000 vínculos.
+
+| Punto | Por qué limita | Medición o cota | Cómo escalaría |
+|---|---|---|---|
+| Cuota del marketplace por tienda | Sesenta llamadas por minuto compartidas entre lecturas y escrituras (RF-17); la API cambia una cantidad por llamada | 1.000 cambios en una tienda tardan unos 17 minutos (RNF-02: p95 de 15 a 16 minutos con Celesa) | Las tiendas no comparten cuota, así que más tiendas no se frenan entre sí. Dentro de una tienda el techo es externo: sólo lo cambia una cuota mayor o una API de escritura por lotes del marketplace. La cola por vínculo evita gastar cuota en valores vencidos (ADR-0004) |
+| Importación inicial del catálogo | Consume la misma cuota: cien publicaciones por llamada | 127.564 publicaciones, unos 22 minutos por tienda | Ocurre una vez por tienda y la rotación evita que una importación larga demore a otra (ADR-0012) |
+| Ingesta y comparación por proveedor | Un lock por proveedor serializa sus corridas | Feed real de 255.129 SKU: 7 segundos de ingesta y comparación (RNF-01, objetivo de 10 minutos) | Proveedores distintos ya corren en paralelo; se pueden agregar réplicas de los workers `ingest` y `compare` porque se reparten el trabajo con esos locks |
+| Publicación | Un lock por tienda serializa sus envíos | El techo lo pone la cuota, no el proceso | Réplicas del worker `publish` atienden tiendas distintas en paralelo, sin coordinación adicional |
+| PostgreSQL | Base compartida por todos los procesos y punto común de falla (ADR-0002, RNF-08) | Consultas de operadores con p95 de 18 ms con el motor publicando (RNF-09) | Primero vertical; después RDS con réplica de lectura para consultas y tablero, y particionar las tablas de intentos y mediciones por fecha. La cola en tabla deja de ser suficiente recién con muchos más vínculos que los del MVP |
+| Snapshots | Cada corrida guarda el feed completo, unos 3,9 MB por corrida del feed real | Unos 19 MB por día y proveedor con corridas cada 300 minutos; hoy no se borran | S3 escala sin cambios de código; en producción una regla de ciclo de vida movería los snapshots viejos a almacenamiento frío y borraría los que ninguna corrida referencia |
+| Entrenamiento de ML | Reentrena el modelo global por cada aceptado pendiente | Hasta 200 observaciones por proveedor (ADR-0016) | El costo crece con la cantidad de proveedores; se acotaría entrenando por lotes o por intervalo en lugar de por observación |
+| Muestreo de métricas | Recalcula la ventana de 24 horas cada minuto | Índices sobre las expresiones de la ventana (migración `0009`) | Agregados incrementales por minuto si el volumen de mediciones creciera |
+
 ## Protocolos de verificación
 
 Las pruebas unitarias cubren RF-11 a RF-14. La integración usa un PostgreSQL real separado, `ivostock_test`, un bucket `snapshots-test`, servidor HTTP de feeds y simulador por TCP. Cubre RF-05 a RF-24 y RNF-03 a RNF-06, incluidas la reanudación del catálogo tras matar su worker, la aprobación previa a la primera corrida, la baja de proveedor (RF-20), la fuente inaccesible (RF-23) y la tienda con credencial revocada (RF-24). Cada prueba limpia únicamente su base de ensayo.
@@ -122,6 +477,69 @@ La campaña de diez cierres mata procesos externos después de observar un marca
 
 Para RNF-01 se mide desde descarga hasta comparación confirmada con el feed real completo. Para RNF-02 se registra aceptación/corte y efecto en el observador del simulador, con servicios sanos y sin cola previa; cada ensayo informa cantidad y frecuencia de cambios, lecturas y reintentos. No existe un cupo de deltas.
 
-Para RNF-07 se observa durante veinticuatro horas, cada sesenta segundos y por separado: página y consulta autenticada en hasta cinco segundos; cambio pequeño en feed de control, ingesta por CLI y efecto externo en hasta sesenta segundos. La carga es controlada. Los disparos de sonda no cambian la programación de cinco horas, que se prueba por separado. Fallos, sondas faltantes, timeouts y reinicios propios cuentan como indisponibilidad. Las fallas externas se registran aparte. La campaña de cierres se realiza fuera de esa ventana.
+Para RNF-07 el servicio interno consulta cada minuto los health HTTP de API, simulador y proveedor
+con timeout de cinco segundos, y lee los heartbeats existentes de ingesta, comparación,
+publicación y catálogo. Conserva una muestra por minuto UTC en `metric_samples`, durante siete
+días. No se alteran feeds, programación de ingesta, cola ni stock para obtener una muestra.
+El motor está disponible si los cuatro heartbeats están vigentes; se mantiene la tolerancia de
+660 segundos del health existente por el tiempo máximo de ingesta. La disponibilidad histórica
+de interfaz/API representa el health de su servicio, no una prueba automatizada del navegador.
+La comprobación de la interfaz visual sigue siendo un recorrido separado.
+
+La ventana se expresa con `start` inclusivo y `end` exclusivo, ambos minutos completos con zona
+horaria; por defecto son las últimas 24 horas completas (1.440 posiciones). Se informa el número
+esperado, registrado y faltante. La disponibilidad de cada componente y la del motor se calcula
+como éxitos divididos por posiciones esperadas, incluyendo faltantes. API y motor tienen series
+separadas. No se reconstruye un minuto ausente a partir de uno posterior. La campaña de cierres
+se ejecuta fuera de esa ventana. Las dependencias HTTP se informan por separado.
+
+`ivostock.metrics_service` corre en el puerto interno 8002, publicado por defecto en 8004 del
+host para conservar 8002 para ML, y mantiene la recolección aunque se detenga la
+API principal. Reutiliza `services.monitor`, `runs_summary`, `health.worker_components` y las
+sesiones existentes. `/metrics/current` informa la edad de la última muestra; las lecturas no
+actualizan el histórico. `/metrics/history` entrega muestras del período y `/metrics/summary`
+calcula disponibilidad y publicación. Los tres requieren sesión y también están disponibles en
+la API principal para la vista Monitoreo. El `/health` del servicio confirma sólo su proceso.
+
+Monitoreo técnico pertenece a administración de plataforma. El TP conserva un único perfil:
+todas las cuentas de operador autenticadas pueden ver la pestaña y consultar `/metrics/*`.
+Esta simplificación no implementa un rol administrador. En un despliegue con perfiles separados,
+la vista y las consultas deben reservarse a administración; las operaciones de catálogo y
+publicación mantienen sus respuestas de negocio, sin modelos ni detalles de infraestructura.
+
+La muestra incluye `ml`, obtenido de `ml.repository.report` (el mismo de `ml-report`), y dos
+sondas HTTP existentes del PR #18: `ml` para `/health/live` y `ml_ready` para `/health`. Se
+incluye además el heartbeat de `ml-train` con su tolerancia de treinta segundos. El motor sigue
+evaluándose con sus cuatro workers originales. El servicio de ML puede estar activo sin una
+inferencia lista mientras reúne historial; se exponen ambos valores y la versión activa,
+observaciones incorporadas por proveedor, mínimo de historial, aceptados y aprendizaje pendiente.
+Un ML caído no convierte en caído al motor que continúa con respaldo. Las sondas de readiness
+reutilizan la prueba aritmética de lectura que ya define ML y no generan corridas ni aprendizaje.
+
+Para RNF-02 `publication_measurements` registra un origen por revisión: aceptación de la corrida
+(`runs.finished_at`), o creación del vínculo si ésta es posterior; para un corte, el instante
+registrado junto a la intención. Se conserva el origen durante reintentos y revisión manual.
+La creación de una intención nueva de corte incrementa revisión incluso si el deseado ya era
+cero, para que no reutilice una confirmación anterior. El simulador registra el primer efecto
+externo de `X-Ivo-Work` en su transacción de escritura y lo devuelve como `effect_at`. Al perder
+un acuse, una repetición devuelve ese primer efecto. El publicador confirma la medición en la
+misma transacción que el stock, sin usar la duración de un intento como latencia total.
+
+El resumen agrupa las revisiones originadas en el período por tienda y calcula `percentile_cont`
+de `effect_at-origin_at`; no promedia percentiles de muestras periódicas. Expone número de muestras,
+pendientes, reemplazos y duraciones desconocidas. Los pendientes y fallos sin confirmación no se
+convierten en muestras exitosas; el ensayo no se declara terminado mientras falten resultados.
+Una duración sin origen verificable o con tiempos inconsistentes es desconocida. Las revisiones
+reemplazadas se identifican y se excluyen de la distribución del trabajo vigente. Las tiendas
+sin muestras tienen p95/p99 nulos. El alcance de RNF-02 (dos tiendas sanas, mil vínculos por tienda,
+sin cola previa) debe acreditarse con su ensayo: el monitoreo ordinario no lo demuestra solo.
+
+`ivostock.observer` corre separado, sin acceso a PostgreSQL ni almacenamiento propio. En cada
+`GET /metrics` consulta estado y resumen del servicio interno y realiza GET a los health HTTP.
+Reenvía el Bearer para validarlo en el servicio de métricas. Puede desplegarse en otra máquina
+configurando las URLs; el perfil local comparte máquina y red. Se consulta una vez por minuto
+durante la campaña, pero la serie histórica pertenece al sistema: la ausencia del observador
+no se presenta como una medición externa exitosa. No genera trabajo, alertas ni notificaciones.
+La decisión y la comparación con UptimeRobot están en el [ADR-0017](../adr/0017-metricas-y-observador.md).
 
 Para RNF-09 se programan 9.000 consultas: cinco operadores durante treinta minutos, 50 % listados paginados de hasta cien vínculos, 25 % búsqueda de SKU y 25 % corridas/fallas. Se mide desde el cliente con motor activo, recursos declarados y sin ocultar errores. Las pruebas largas, la interfaz y ML son hitos del MVP, según el [roadmap](../roadmap/ROADMAP.md).

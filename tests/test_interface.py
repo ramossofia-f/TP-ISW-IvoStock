@@ -32,6 +32,8 @@ REQUIRED = {
     ("POST", "/links/{}/resume"),
     ("GET", "/runs"),
     ("GET", "/runs/summary"),
+    ("GET", "/metrics/current"),
+    ("GET", "/metrics/summary"),
 }
 
 

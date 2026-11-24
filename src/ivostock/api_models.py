@@ -30,23 +30,45 @@ class ErrorOut(BaseModel):
 # --- Proveedores ---------------------------------------------------------------------------
 
 
-class ProviderIn(Strict):
-    name: str = Field(min_length=1, max_length=100, description="Nombre único del proveedor")
-    url: str = Field(
-        min_length=1,
-        max_length=2048,
-        description="URL HTTP(S) del inventario completo, sin credenciales embebidas",
-    )
-
-    @field_validator("url")
-    @classmethod
-    def http_without_credentials(cls, value):
-        parts = urlsplit(value)
-        if parts.scheme not in ("http", "https") or not parts.hostname:
-            raise ValueError("La URL debe ser http o https")
-        if parts.username or parts.password:
-            raise ValueError("La URL no debe incluir credenciales")
+def http_without_credentials(value):
+    if value is None:
         return value
+    parts = urlsplit(value)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("La URL debe ser http o https")
+    if parts.username or parts.password:
+        raise ValueError("La URL no debe incluir credenciales")
+    return value
+
+
+PROVIDER_NAME = {"min_length": 1, "max_length": 100, "description": "Nombre único del proveedor"}
+PROVIDER_URL = {
+    "min_length": 1,
+    "max_length": 2048,
+    "description": "URL HTTP(S) del inventario completo, sin credenciales embebidas",
+}
+
+
+class ProviderIn(Strict):
+    name: str = Field(**PROVIDER_NAME)
+    url: str = Field(**PROVIDER_URL)
+
+    _url = field_validator("url")(http_without_credentials)
+
+
+class ProviderUpdateIn(Strict):
+    """RF-04: al menos uno de los dos; una URL nueva se valida como en el alta."""
+
+    name: str | None = Field(None, **PROVIDER_NAME)
+    url: str | None = Field(None, **PROVIDER_URL)
+
+    _url = field_validator("url")(http_without_credentials)
+
+    @model_validator(mode="after")
+    def something_to_change(self):
+        if self.name is None and self.url is None:
+            raise ValueError("Indicar un nombre o una URL nuevos")
+        return self
 
 
 class PreviewRow(BaseModel):
@@ -81,6 +103,18 @@ class ProviderCreated(BaseModel):
     )
 
 
+class ProviderUpdated(BaseModel):
+    id: int
+    name: str
+    status: str
+    next_run_at: datetime | None = Field(description="Próxima ingesta programada; no cambia")
+    source_validated: bool = Field(description="True si se cambió y validó la URL")
+    sku: int | None = Field(None, description="SKU válidos de la fuente nueva")
+    parse_error_rate: float | None = Field(None, description="Fracción de filas con error")
+    parse_alert: bool | None = Field(None, description="True si el error supera el 10 % (RF-14)")
+    preview: list[PreviewRow] | None = Field(None, description="Muestra de la fuente nueva")
+
+
 class ProviderOut(BaseModel):
     id: int
     name: str
@@ -89,6 +123,9 @@ class ProviderOut(BaseModel):
     next_run_at: datetime | None
     last_accepted_run: int | None
     last_error: str | None
+    quarantine_run_id: int | None = Field(
+        None, description="Última cuarentena posterior a la última aceptación; sólo si está activo"
+    )
 
 
 class DisableOut(BaseModel):
@@ -218,7 +255,7 @@ class RunMetrics(BaseModel):
     reused_inventory: bool | None = None
     D: float | None = Field(None, description="Fracción de SKU de la corrida previa que ya no figura")
     Z: float | None = Field(None, description="Fracción de SKU con stock que pasó a cero")
-    p: float | None = Field(None, description="Sospecha de 0 a 1; mayor que 0,5 manda la corrida a cuarentena")
+    p: float | None = Field(None, description="Puntaje de reglas; decide sólo al usar el respaldo")
 
 
 class RunOut(BaseModel):
@@ -255,3 +292,28 @@ class RunSummary(BaseModel):
     failed: int
     interrupted: int
     running: int
+
+
+# --- Fallas definitivas ------------------------------------------------------------------------
+
+
+class DeadLetterOut(BaseModel):
+    id: int
+    link_id: int
+    store_id: str
+    item_id: str
+    sku: str
+    link_state: Literal["active", "error", "inactive"] = Field(
+        description="Estado actual del vínculo: `error` mientras espera revisión"
+    )
+    revision: int
+    quantity: int = Field(description="Cantidad que no se pudo publicar")
+    http_status: int | None = Field(description="Código HTTP; nulo si no hubo respuesta")
+    response: str = Field(description="Respuesta del marketplace, recortada a 300 caracteres")
+    created_at: datetime
+    reviewed_at: datetime | None = Field(description="Cuándo se reanudó el vínculo; nulo si no")
+
+
+class DeadLettersPage(BaseModel):
+    items: list[DeadLetterOut]
+    next_offset: int | None = Field(description="Offset de la página siguiente; None en la última")

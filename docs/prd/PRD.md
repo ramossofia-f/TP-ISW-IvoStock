@@ -12,6 +12,14 @@ Ivo Stock ingiere cada proveedor una vez y reutiliza su inventario para todas la
 
 El POC se opera por CLI y demuestra una fuente real archivada hasta una tienda simulada. El MVP incorpora una interfaz con cuentas precreadas, login, configuración y tablero; permite incorporar una segunda tienda desde la app. Los perfiles de catálogo y publicaciones son responsabilidades de uso, con los mismos permisos.
 
+Monitoreo técnico corresponde a la administración de la plataforma: disponibilidad de procesos,
+publicación y salud del componente ML. El usuario de negocio configura proveedores y tiendas y
+consulta el resultado de sus sincronizaciones, sin necesitar conocer la infraestructura o el
+modelo. Para este TP las cinco cuentas precreadas comparten un único perfil de permisos; todas
+ven Monitoreo y pueden consultar sus endpoints autenticados. Es una simplificación explícita de
+la demostración, no una separación de administradores y usuarios implementada. Una versión con
+esos perfiles separados debe reservar tanto la vista como sus endpoints a administración.
+
 ## Reglas del dominio
 
 - INV-1: una publicación tiene como máximo un vínculo activo que escribe su stock. Un vínculo en falla conserva esa asignación.
@@ -50,8 +58,8 @@ Must significa necesario para el hito indicado. POC corresponde a E2 y MVP a E3.
 | RF-10 | Snapshot crudo e inmutable de cada descarga, conservado antes de aceptar la corrida | Must | POC |
 | RF-11 | Contrato UTF-8 con primera fila exacta `SKU;stock`, separador `;` y dos columnas. SKU como cadena; blanco es cero; stock negativo, no entero o fuera de rango y filas mal formadas se descartan con línea y motivo. Entre duplicados vale la última ocurrencia válida | Must | POC |
 | RF-12 | Cada corrida aceptada representa el inventario completo; los SKU ausentes pasan a cero. Aceptar actualiza atómicamente el estado y su evento de comparación | Must | POC |
-| RF-13 | Validar contra el último inventario aceptado y poner en cuarentena corridas sospechosas sin modificarlo ni generar nuevas tareas | Must | POC |
-| RF-14 | Informar tasa de errores de parseo y alerta al superar 10 %, sin detener por esa tasa sola | Must | POC |
+| RF-13 | Aplicar siempre la guarda contra el último inventario aceptado; cuarentena sin modificarlo ni generar nuevas tareas, sin aprobación ni modelo que la omita | Must | POC |
+| RF-14 | Informar tasa de errores de parseo y alerta al superar 10 %, sin bloquear automáticamente por ese umbral; la tasa participa en la evaluación integral de la corrida | Must | POC |
 | RF-15 | Comparar por vínculo contra su último stock confirmado; al vincular, usar la cantidad importada del catálogo | Must | POC |
 | RF-16 | Cola durable FIFO entre tareas disponibles, con una pendiente por vínculo; el último valor reemplaza al anterior conservando antigüedad. Los reintentos en espera no bloquean otras tareas | Must | POC |
 | RF-17 | Compartir 60 llamadas/minuto por tienda entre lecturas y escrituras, contando intentos fallidos y conservando la cuota al reiniciar | Must | POC |
@@ -64,9 +72,21 @@ Must significa necesario para el hito indicado. POC corresponde a E2 y MVP a E3.
 | RF-24 | Fallas globales de acceso a una tienda: degradación y conservación de pendientes hasta recuperar acceso | Must | POC |
 | RF-25 | Interfaz autenticada de configuración, búsqueda y tablero de corridas, tiendas, pendientes, confirmaciones y fallas | Must | MVP |
 | RF-26 | Simulador HTTP con catálogo estático generado, cantidades absolutas, semántica de cero, límite de llamadas y errores provocables | Must | POC |
-| RF-27 | Componente de ML con entrenamiento reproducible, inferencia y monitoreo; el problema y el modelo se definirán para E3 | Must | MVP |
+| RF-27 | Detector global de normalidad con proveedor codificado y estadísticas de corrida; señal adicional a la guarda obligatoria, aprendizaje asíncrono sólo de aceptados, versiones reproducibles y monitoreo interno | Must | MVP |
 
 ## Validación de corridas
+
+El MVP usa un único detector de normalidad para todos los proveedores. Recibe el ID del proveedor
+codificado mediante one-hot y las estadísticas de la corrida. Agrega cuarentenas después de la
+guarda obligatoria, antes de aceptar inventario o generar eventos de comparación. Una anomalía
+va a cuarentena y no genera aprendizaje. El operador recibe un aviso con proveedor y corrida
+afectados; los puntajes de ML son internos.
+
+El detector aprende de los aceptados, que se asumen sanos. La guarda fija se aplica siempre:
+ningún modelo, aprobación ni replay puede omitirla. Para un proveedor nuevo, decide sola hasta
+que una versión entrenada incorpore diez aceptados suyos. También decide sola si el servicio no
+puede evaluar o no responde en un segundo. El contrato de formato se valida siempre. Esta fórmula
+define la guarda obligatoria:
 
 Sea `D` la proporción de SKU del último inventario aceptado que desaparecen y `Z` la proporción de sus SKU positivos que están presentes en la corrida con cero. Los ausentes sólo cuentan en `D`.
 
@@ -74,10 +94,19 @@ Sea `D` la proporción de SKU del último inventario aceptado que desaparecen y 
 d = min(1, D / 0.10)
 z = min(1, Z / 0.25)
 p = 1 - (1 - d) * (1 - z)
-cuarentena si p > 0.5
+cuarentena si p > 0.5 o ML detecta anomalía
 ```
 
-Las tolerancias son fijas; el puntaje es determinista. La primera corrida establece la base sin evaluar D/Z; los vínculos aprobados antes de ella esperan sin escrituras y se comparan al aceptarla. Una fila descartada deja ausente su SKU salvo que exista otra ocurrencia válida. Una cuarentena puede reproducirse por CLI, con la misma validación; no existe aprobación que omita la guarda.
+Las tolerancias de la guarda son fijas y su puntaje es determinista. Si p > 0,5 se pone en cuarentena sin consultar ML; de lo contrario, el modelo puede agregar una cuarentena, nunca liberar una que frene la guarda. La primera corrida establece la base sin evaluar D/Z; los vínculos aprobados antes de ella esperan sin escrituras y se comparan al aceptarla. Una fila descartada deja ausente su SKU salvo que exista otra ocurrencia válida. Una cuarentena puede reproducirse por CLI: vuelve a pasar por la validación vigente, sin aprobación manual que la omita.
+
+Cada aceptación conserva una observación durable, incluso cuando decidió el respaldo. El
+entrenador procesa cada pendiente sin demorar publicación, con hasta doscientos aceptados por
+proveedor y peso reducido a la mitad cada siete días. Una caída indefinida de ML no detiene al
+motor: conserva el modelo previo y el aprendizaje pendiente. Al recuperar, procesa sin duplicar
+observaciones. No se importan históricos automáticamente. Los valores de arranque y memoria son
+configurables; no constituyen garantías de precisión. El [ADR-0016](../adr/0016-normalidad-global-y-aprendizaje-durable.md)
+describe el modelo, sus limitaciones, la reproducción y el costo aceptado en falsas cuarentenas.
+Se conserva la guarda obligatoria del ADR-0015.
 
 ## Requisitos no funcionales
 
@@ -89,7 +118,7 @@ Las tolerancias son fijas; el puntaje es determinista. La primera corrida establ
 | RNF-04 | Con el mismo estado de entrada, repetir una corrida o notificarla varias veces no duplica pendientes ni produce escrituras adicionales. Repetir una petición tras perder su confirmación conserva el efecto absoluto | POC |
 | RNF-05 | La cola pendiente por tienda está acotada por sus vínculos no desactivados, incluyendo cortes por confirmar | POC |
 | RNF-06 | Diez cierres abruptos reproducibles, cero trabajo vigente perdido y reanudación en hasta 10 minutos con almacenes disponibles; comprobar también reinicio abrupto de PostgreSQL conservando volúmenes | POC |
-| RNF-07 | Al menos 99 % de comprobaciones funcionales exitosas por separado para interfaz/API y motor durante 24 horas, con observador externo cada minuto | MVP |
+| RNF-07 | Al menos 99 % de muestras de disponibilidad exitosas por separado para interfaz/API y motor durante 24 horas: health HTTP y vigencia de heartbeats, con estado interno persistido cada minuto durante siete días. Un observador externo consulta ese estado y los health sin generar trabajo ni persistir muestras | MVP |
 | RNF-08 | Con PostgreSQL disponible, detener API no detiene el motor; detener workers permite consultar estado persistido. PostgreSQL es un punto común de falla | POC/MVP |
 | RNF-09 | Cinco operadores autenticados a una consulta/s cada uno durante 30 minutos, sobre 2.000 vínculos y con motor activo: p95 <2 segundos | MVP |
 | RNF-10 | Secretos por entorno, nunca en Git, respuestas de configuración o logs; snapshots reales y sus derivados fuera del repositorio | POC |
@@ -99,9 +128,15 @@ Las tolerancias son fijas; el puntaje es determinista. La primera corrida establ
 | RNF-14 | Procesos configurables por entorno e imágenes construibles en CI; los datos durables residen en PostgreSQL y S3 | POC |
 | RNF-15 | Demostrar 2.000 vínculos totales, 1.000 por tienda; registrar recursos, cantidad y frecuencia de cambios sin imponer un máximo de deltas por tienda | MVP |
 | RNF-16 | OpenAPI generado para los endpoints realmente implementados de API y simulador | POC/MVP |
-| RNF-17 | Estado y registros estructurados correlacionables por corrida, vínculo, revisión e intento; health check por proceso y métricas operativas consultables | POC |
+| RNF-17 | Estado y registros estructurados correlacionables por corrida, vínculo, revisión e intento; health check por proceso y métricas operativas consultables. Servicio de métricas interno, histórico por minuto de siete días y tablero numérico autenticado; disponibilidad separada de percentiles de publicación por tienda, sin alertas | POC/MVP |
 
 La espera hasta la siguiente ingesta puede ser de cinco horas y se informa separada de RNF-02. Las mediciones registran errores, rechazos, timeouts y solicitudes sin resultado; no se usan para mejorar percentiles. El protocolo detallado está en el [SRD](../srd/SRD.md).
+
+Disponibilidad de componentes y cumplimiento de procesamiento son resultados distintos. La
+serie histórica de RNF-07 la conserva el sistema, y el observador sólo lee sus métricas y
+comprueba acceso actual. No se ejecutan cambios sintéticos por observar. Los percentiles de
+RNF-02 se presentan por tienda junto con el tamaño de muestra y las publicaciones sin resultado;
+una tienda sin publicaciones medidas no acredita el objetivo. Ver [ADR-0017](../adr/0017-metricas-y-observador.md).
 
 ## Datos, demostración y límites
 

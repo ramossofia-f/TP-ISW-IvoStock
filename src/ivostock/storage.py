@@ -15,8 +15,9 @@ class Snapshots:
             endpoint_url=cfg.s3_endpoint,
             aws_access_key_id=cfg.s3_access_key,
             aws_secret_access_key=cfg.s3_secret_key,
-            region_name="us-east-1",
+            region_name=cfg.s3_region,
         )
+        self.region = cfg.s3_region
 
     def initialize(self):
         try:
@@ -24,7 +25,13 @@ class Snapshots:
         except ClientError as exc:
             if exc.response["Error"]["Code"] not in ("404", "NoSuchBucket"):
                 raise
-            self.client.create_bucket(Bucket=self.bucket)
+            # Fuera de us-east-1, S3 exige declarar la región del bucket al crearlo.
+            extra = (
+                {}
+                if self.region == "us-east-1"
+                else {"CreateBucketConfiguration": {"LocationConstraint": self.region}}
+            )
+            self.client.create_bucket(Bucket=self.bucket, **extra)
 
     def put(self, raw):
         digest = hashlib.sha256(raw).hexdigest()

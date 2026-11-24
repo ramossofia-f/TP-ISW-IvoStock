@@ -18,6 +18,7 @@ from ivostock.api_models import (
     ApproveIn,
     ApproveOut,
     AvailableStore,
+    DeadLettersPage,
     DisableOut,
     ErrorOut,
     LinkOffOut,
@@ -27,6 +28,8 @@ from ivostock.api_models import (
     ProviderCreated,
     ProviderIn,
     ProviderOut,
+    ProviderUpdated,
+    ProviderUpdateIn,
     RunsPage,
     RunSummary,
     StoreIn,
@@ -84,6 +87,32 @@ def create_provider(body: ProviderIn):
 )
 def list_providers():
     return services.status(database(), "providers")
+
+
+@router.patch(
+    "/providers/{provider_id}",
+    response_model=ProviderUpdated,
+    tags=["providers"],
+    summary="Modificar nombre o URL de un proveedor",
+    description="RF-04. Una URL nueva se descarga y valida como en el alta antes de guardarse; si "
+    "falla, no cambia nada. El inventario aceptado y los vínculos se conservan: la próxima ingesta "
+    "compara la fuente nueva contra ese inventario y la guarda la pone en cuarentena si difiere "
+    "demasiado. La respuesta no incluye la URL.",
+    responses={
+        **NOT_FOUND,
+        409: {
+            "model": ErrorOut,
+            "description": "Nombre repetido, proveedor dado de baja o ingesta en curso",
+        },
+        422: {"model": ErrorOut, "description": "La fuente incumple el contrato"},
+        502: {"model": ErrorOut, "description": "No se pudo descargar la fuente"},
+    },
+)
+def update_provider(provider_id: ProviderId, body: ProviderUpdateIn):
+    result = services.update_provider(database(), provider_id, body.name, body.url)
+    if result.get("preview") is not None:
+        result["preview"] = [{"sku": sku, "stock": stock} for sku, stock in result["preview"]]
+    return result
 
 
 @router.post(
@@ -302,3 +331,26 @@ def list_runs(
     if provider is not None:
         services.require_provider(engine, provider, active=False)
     return services.list_runs(engine, provider, limit, offset)
+
+
+# --- Fallas definitivas (tablero de RF-25) ---------------------------------------------------------
+
+
+@router.get(
+    "/deadletters",
+    response_model=DeadLettersPage,
+    tags=["links"],
+    summary="Listar fallas definitivas",
+    description="Dead letters (RF-19), la más reciente primero, con la publicación y el estado "
+    "actual del vínculo. Un vínculo en `error` se reanuda con `POST /links/{id}/resume`, que marca "
+    "sus fallas como revisadas. Para la página siguiente usar `next_offset`.",
+)
+def list_dead_letters(
+    store: OptionalStore = None,
+    pending_only: Annotated[
+        bool, Query(description="Sólo las que todavía no se revisaron")
+    ] = False,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0, le=10_000_000)] = 0,
+):
+    return services.list_dead_letters(database(), store, pending_only, limit, offset)
