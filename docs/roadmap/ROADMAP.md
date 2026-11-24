@@ -81,8 +81,9 @@ observador es otro microservicio de sólo lectura, sin histórico propio ni aler
 de efecto externo se calculan por tienda, separados de disponibilidad. Diseño y comparación con
 UptimeRobot en el [ADR-0017](../adr/0017-metricas-y-observador.md).
 
-La campaña real de 24 horas queda pendiente. La instrumentación no se declara como evidencia de
-haber cumplido los umbrales. El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
+La campaña real de 24 horas se ejecutó en el laboratorio del 19/11 al 20/11/2026 sobre la revisión
+`7600ae5`: 1.440 de 1.440 muestras y 100 % para API y motor, por encima del 99 %
+([resultado](../entregas/RNF07-RESULTADO-COMPLETO-20261119.md), PR #31). El [registro de verificación](../entregas/METRICAS-DISPONIBILIDAD.md)
 detalla las comprobaciones ejecutadas y las limitaciones.
 
 ### Ensayo de dos tiendas (RNF-02 y RNF-15)

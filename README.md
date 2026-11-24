@@ -359,14 +359,15 @@ Para RNF-07 mantener el sistema encendido 24 horas y consultar el observador cad
 sesión vigente; el histórico lo persiste exclusivamente `metrics`. Al terminar, consultar
 `/metrics/summary?start=INICIO_ISO&end=FIN_ISO` y conservar el resultado de la ventana elegida como
 evidencia de entrega antes de que expire su retención. El observador no guarda archivos ni acredita
-su propia continuidad histórica. La campaña de 24 horas sigue pendiente de ejecución;
-las pruebas automatizadas no la sustituyen.
+su propia continuidad histórica. La campaña de 24 horas se ejecutó en el laboratorio
+([resultado](docs/entregas/RNF07-RESULTADO-COMPLETO-20261119.md)); las pruebas automatizadas no la sustituyen.
 
 Para fijar una ventana única que conserve los cortes de un equipo que se reinicia, usar
 `scripts/medir_disponibilidad.py start` y, al terminar, `report`. El comando guarda las fechas y
 exporta resumen e histórico sin sobrescribir evidencia. La [preparación del laboratorio](docs/entregas/RNF07-LABORATORIO.md)
 detalla el inicio límite del 22/11, la recuperación y el tratamiento del apagado diario. Los
-reportes de las otras mediciones están en los PR #21 y #25; RNF-07 sigue pendiente de ejecución.
+reportes de las otras mediciones están en los PR #21 y #25. RNF-07 cumple: 1.440 de 1.440 muestras
+y 100 % para API y motor en 24 horas de reloj ([resultado](docs/entregas/RNF07-RESULTADO-COMPLETO-20261119.md), PR #31).
 
 ## Pruebas
 

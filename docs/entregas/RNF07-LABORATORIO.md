@@ -1,7 +1,8 @@
 # Campaña RNF-07 en el laboratorio
 
 Preparación solicitada el 19/11/2026. Inicio límite: 22/11/2026, hora de Buenos Aires.
-Equipo propuesto: `fortega@labs004.udesa.edu.ar`. **La campaña todavía no se inició.**
+Equipo propuesto: `fortega@labs004.udesa.edu.ar`. La campaña se ejecutó del 19/11 al 20/11/2026; el resultado está en
+[RNF07-RESULTADO-COMPLETO-20261119.md](RNF07-RESULTADO-COMPLETO-20261119.md). Lo que sigue es la preparación original.
 La conexión SSH desde la sesión de preparación respondió `Permission denied (publickey,password)`;
 Docker, permisos y persistencia del laboratorio deben verificarse desde una sesión autenticada.
 
