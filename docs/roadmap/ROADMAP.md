@@ -66,6 +66,10 @@ con Node.js en el host. La
 [evaluación sintética vigente](../entregas/ML-NORMALIDAD-EVALUACION.md) declara detecciones y falsas
 cuarentenas. Integrado en `develop` por los PR #18 y #27, con revisión del equipo y CI remoto.
 
+Suite al cierre de la Entrega 3 (23/11/2026, sobre `develop`): 376 pruebas automatizadas, 193
+unitarias (192 aprobadas y 1 omitida con `pytest -m "not integration"`) y 183 de integración
+contra PostgreSQL y S3, que corren en el job `integration` del CI.
+
 La [activación tras diez aceptados del proveedor](../entregas/ENTREGA-3-ML-PENDIENTES.md) se grabó
 para el video E3 sobre el commit `219b928`: `ml-report` con 9 de 10 observaciones, corrida 10
 aceptada por la guarda, nueva versión del modelo con 10 observaciones y corrida 11 decidida con
