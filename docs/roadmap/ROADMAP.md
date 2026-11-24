@@ -64,10 +64,12 @@ Implementación verificada localmente en el [registro del detector](../entregas/
 300 pruebas Python aprobadas en Docker tras restablecer la guarda obligatoria y aviso comprobado
 con Node.js en el host. La
 [evaluación sintética vigente](../entregas/ML-NORMALIDAD-EVALUACION.md) declara detecciones y falsas
-cuarentenas. Pendientes integración en la rama de entrega, revisión del equipo y CI remoto.
+cuarentenas. Integrado en `develop` por los PR #18 y #27, con revisión del equipo y CI remoto.
 
-Para el video E3 también queda pendiente mostrar la [activación tras diez aceptados del proveedor](../entregas/ENTREGA-3-ML-PENDIENTES.md):
-si todavía no hay suficientes runs, el modelo operativo se entrega al procesar el feed n.º 10 aceptado.
+La [activación tras diez aceptados del proveedor](../entregas/ENTREGA-3-ML-PENDIENTES.md) se grabó
+para el video E3 sobre el commit `219b928`: `ml-report` con 9 de 10 observaciones, corrida 10
+aceptada por la guarda, nueva versión del modelo con 10 observaciones y corrida 11 decidida con
+`decision_source: ml`.
 
 Los ensayos de publicación, consulta y disponibilidad tienen ventanas separadas, recursos y perfiles declarados. La cantidad y frecuencia de cambios se registran, sin límite de admisión por deltas.
 
